@@ -203,31 +203,10 @@ impl ObjectImpl for GstFastestDet {
                 let run = value.get().unwrap();
                 gst_info!(CAT, obj: obj, "Set run to {}", run);
                 if run {
-                    let classes_text = match std::fs::read_to_string(settings.classes_path.clone())
-                    {
-                        Ok(text) => text,
-                        Err(_) => {
-                            gst::element_error!(
-                                obj,
-                                gst::ResourceError::Settings,
-                                ("Failed to read classes toml")
-                            );
-                            return;
-                        }
-                    };
+                    let classes_text = std::fs::read_to_string(settings.classes_path.clone()).expect("Unable to read classes file");
                     gst_info!(CAT, obj: obj, "Read classes toml success");
-                    let classes = toml::from_str::<Classes>(&classes_text);
-                    let c = match classes {
-                        Ok(c) => c.classes,
-                        Err(e) => {
-                            gst::element_error!(
-                                obj,
-                                gst::CoreError::Negotiation,
-                                ["Failed to parse classes: {}", e]
-                            );
-                            return;
-                        }
-                    };
+                    let classes = toml::from_str::<Classes>(&classes_text).expect("Unable to parse classes file");
+                    let c = classes.classes;
                     gst_info!(CAT, obj: obj, "Set classes success");
                     // TODO: using config
                     let model_size = (352, 352);
@@ -239,12 +218,7 @@ impl ObjectImpl for GstFastestDet {
                             settings.det = Some(d);
                         }
                         Err(e) => {
-                            gst::element_error!(
-                                obj,
-                                gst::CoreError::Negotiation,
-                                ["Failed to create model: {}", e]
-                            );
-                            return;
+                            panic!("Unable to load model: {}", e);
                         }
                     }
                 } else {
