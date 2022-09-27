@@ -81,6 +81,10 @@ pub struct FastestDet {
     model_size: (i32, i32),
 }
 
+// Maybe I should use mutex instead
+unsafe impl Send for FastestDet {}
+unsafe impl Sync for FastestDet {}
+
 impl FastestDet {
     /// model_size: (width, height)
     pub fn new<P>(

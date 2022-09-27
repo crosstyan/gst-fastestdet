@@ -1,5 +1,6 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
+use super::fastest_det::{nms_handle, FastestDet, TargetBox};
 use gst::prelude::*;
 use gst::subclass::prelude::*;
 use gst::{gst_debug, gst_error, gst_info, gst_log, gst_trace, gst_warning};
@@ -8,10 +9,12 @@ use gst_video::subclass::prelude::*;
 use opencv::core::Mat as CvMat;
 use opencv::core::*;
 use opencv::prelude::*;
+use serde_derive::{Deserialize, Serialize};
 
 use std::ffi::c_void;
 
 use std::i32;
+use std::ops::Index;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
@@ -22,6 +25,8 @@ use once_cell::sync::Lazy;
 // struct as this can (in theory) be accessed from multiple threads at
 // the same time.
 
+// https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-good/sys/v4l2/gstv4l2src.c
+
 /// This module contains the private implementation details of our element
 static CAT: Lazy<gst::DebugCategory> = Lazy::new(|| {
     gst::DebugCategory::new(
@@ -31,8 +36,79 @@ static CAT: Lazy<gst::DebugCategory> = Lazy::new(|| {
     )
 });
 
+// https://gstreamer.freedesktop.org/documentation/application-development/advanced/buffering.html?gi-language=c#timeshift-buffering
+pub fn paint_targets(
+    paint_img: &mut CvMat,
+    targets: &Vec<TargetBox>,
+    classes: &Vec<String>,
+) -> Result<(), anyhow::Error> {
+    for target in targets.iter() {
+        let blue = Scalar::new(255.0, 255.0, 0.0, 0.0);
+        let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
+        let thickness = 2;
+        let line_type = opencv::imgproc::LINE_8;
+        let shift = 0;
+        opencv::imgproc::rectangle(
+            paint_img,
+            Rect::new(
+                target.x1,
+                target.y1,
+                target.x2 - target.x1,
+                target.y2 - target.y1,
+            ),
+            blue,
+            thickness,
+            line_type,
+            shift,
+        )?;
+        let class_name = classes.index(target.class as usize);
+        let text = format!("{}: {:.2}", class_name, target.score);
+        opencv::imgproc::put_text(
+            paint_img,
+            &text,
+            Point::new(target.x1, target.y1),
+            opencv::imgproc::FONT_HERSHEY_SIMPLEX,
+            0.75,
+            green,
+            thickness,
+            line_type,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+struct Classes {
+    pub classes: Vec<String>,
+}
+
+const DEFAULT_MODEL_PATH: &'static str = "models.bin";
+const DEFAULT_PARAM_PATH: &'static str = "models.param";
+const DEFAULT_CLASSES_PATH: &'static str = "classes.toml";
+
+pub struct Settings {
+    model_path: String,
+    param_path: String,
+    classes_path: String,
+    det: Option<FastestDet>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            model_path: DEFAULT_MODEL_PATH.to_string(),
+            param_path: DEFAULT_PARAM_PATH.to_string(),
+            classes_path: DEFAULT_CLASSES_PATH.to_string(),
+            det: None,
+        }
+    }
+}
+
 #[derive(Default)]
-pub struct GstFastestDet {}
+pub struct GstFastestDet {
+    settings: Mutex<Settings>,
+}
 
 impl GstFastestDet {}
 
@@ -60,7 +136,112 @@ GObject                                   ObjectImpl
  */
 
 // Implementation of glib::Object virtual methods
-impl ObjectImpl for GstFastestDet {}
+impl ObjectImpl for GstFastestDet {
+    // https://www.freedesktop.org/software/gstreamer-sdk/data/docs/latest/gobject/gobject-GParamSpec.html#G-PARAM-CONSTRUCT-ONLY:CAPS
+    // https://www.freedesktop.org/software/gstreamer-sdk/data/docs/2012.5/gobject/howto-gobject-construction.html
+    fn properties() -> &'static [glib::ParamSpec] {
+        static PROPERTIES: Lazy<Vec<glib::ParamSpec>> = Lazy::new(|| {
+            vec![
+                glib::ParamSpecString::builder("model_path")
+                    .nick("Model")
+                    .blurb("Model path which should be ended with `.bin`")
+                    .default_value(Some(DEFAULT_MODEL_PATH))
+                    .flags(glib::ParamFlags::READWRITE)
+                    .build(),
+                glib::ParamSpecString::builder("config_path")
+                    .nick("Config")
+                    .blurb("Config path which should be ended with `.toml`")
+                    .default_value(Some(DEFAULT_CLASSES_PATH))
+                    .flags(glib::ParamFlags::READWRITE)
+                    .build(),
+                glib::ParamSpecString::builder("param_path")
+                    .nick("Param")
+                    .blurb("Param path which should be ended with `.param`")
+                    .default_value(Some(DEFAULT_CLASSES_PATH))
+                    .flags(glib::ParamFlags::READWRITE)
+                    .build(),
+                glib::ParamSpecBoolean::builder("run")
+                    .nick("Run")
+                    .blurb("if true, run the model")
+                    .default_value(false)
+                    .flags(glib::ParamFlags::READWRITE)
+                    .build(),
+            ]
+        });
+        PROPERTIES.as_ref()
+    }
+    fn set_property(
+        &self,
+        obj: &Self::Type,
+        _id: usize,
+        value: &glib::Value,
+        pspec: &glib::ParamSpec,
+    ) {
+        match pspec.name() {
+            "model_path" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.model_path = value.get().unwrap();
+            }
+            "config_path" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.classes_path = value.get().unwrap();
+            }
+            "param_path" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.param_path = value.get().unwrap();
+            }
+            "run" => {
+                let mut settings = self.settings.lock().unwrap();
+                let classes_text = match std::fs::read_to_string(settings.classes_path.clone()) {
+                    Ok(text) => text,
+                    Err(_) => {
+                        gst::element_error!(
+                            obj,
+                            gst::ResourceError::Settings,
+                            ("Failed to read classes toml")
+                        );
+                        return;
+                    }
+                };
+                let classes = toml::from_str::<Classes>(&classes_text);
+                let c = match classes {
+                    Ok(c) => c.classes,
+                    Err(e) => {
+                        gst::element_error!(
+                            obj,
+                            gst::CoreError::Negotiation,
+                            ["Failed to parse classes: {}", e]
+                        );
+                        return;
+                    }
+                };
+                let run = value.get().unwrap();
+                if run {
+                    // TODO: using config
+                    let model_size = (352, 352);
+                    let det =
+                        FastestDet::new(&settings.param_path, &settings.model_path, model_size, c);
+                    match det {
+                        Ok(d) => {
+                            settings.det = Some(d);
+                        }
+                        Err(e) => {
+                            gst::element_error!(
+                                obj,
+                                gst::CoreError::Negotiation,
+                                ["Failed to create model: {}", e]
+                            );
+                            return;
+                        }
+                    }
+                } else {
+                    settings.det = None;
+                }
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
 
 impl GstObjectImpl for GstFastestDet {}
 
@@ -210,42 +391,37 @@ impl VideoFilterImpl for GstFastestDet {
         assert_eq!(in_format, gst_video::VideoFormat::Bgr);
         assert_eq!(out_format, gst_video::VideoFormat::Bgr);
 
-        let _in_mat = match unsafe {
-            CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, in_ptr, in_stride)
-        } {
-            Ok(mat) => mat,
-            Err(_) => return Err(gst::FlowError::Error),
-        };
-
-        let mut out_mat = match unsafe {
-            CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, out_ptr, out_stride)
-        } {
-            Ok(mat) => mat,
-            Err(_) => return Err(gst::FlowError::Error),
-        };
-
-        let blue = Scalar::new(255.0, 255.0, 0.0, 0.0);
-        let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
-        let thickness = 2;
-        let line_type = opencv::imgproc::LINE_8;
-        let text = "TEST!";
-        // draw something on frame for testing
-        let res = opencv::imgproc::put_text(
-            &mut out_mat,
-            text,
-            Point::new(cols / 2, rows / 2),
-            opencv::imgproc::FONT_HERSHEY_SIMPLEX,
-            0.75,
-            green,
-            thickness,
-            line_type,
-            false,
-        );
-        if let Err(_) = res {
-            return Err(gst::FlowError::Error);
+        let settings = self.settings.lock().unwrap();
+        let det = settings.det.as_ref();
+        match det {
+            Some(det) => {
+                let mut out_mat = match unsafe {
+                    CvMat::new_rows_cols_with_data(
+                        rows,
+                        cols,
+                        opencv::core::CV_8UC3,
+                        out_ptr,
+                        out_stride,
+                    )
+                } {
+                    Ok(mat) => mat,
+                    Err(_) => return Err(gst::FlowError::Error),
+                };
+                let input = det.preprocess(&out_mat).unwrap();
+                let (w, h) = (out_mat.cols(), out_mat.rows());
+                let targets = det.detect(&input, (w, h), 0.65).unwrap();
+                let nms_targets = nms_handle(&targets, 0.45);
+                let res = paint_targets(&mut out_mat, &nms_targets, det.classes());
+                match res {
+                    Ok(_) => return Ok(gst::FlowSuccess::Ok),
+                    Err(_) => return Err(gst::FlowError::Error),
+                }
+            }
+            None => {
+                return Ok(gst::FlowSuccess::Ok);
+            }
         }
-
-        Ok(gst::FlowSuccess::Ok)
+        // Ok(gst::FlowSuccess::Ok)
     }
 
     fn transform_frame_ip(
@@ -257,7 +433,7 @@ impl VideoFilterImpl for GstFastestDet {
         let rows = frame.height() as i32;
         let stride = frame.plane_stride()[0] as usize;
         let data = frame.plane_data_mut(0).unwrap();
-        // Okay.I know what I'm doing. I'm sure. 
+        // Okay.I know what I'm doing. I'm sure.
         let ptr = data.as_mut_ptr() as *mut c_void;
 
         let mut out_mat = match unsafe {
