@@ -181,11 +181,13 @@ impl ObjectImpl for GstFastestDet {
             "model-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.model_path = value.get().unwrap();
+                settings.model_path = settings.model_path.trim().to_string();
                 gst_info!(CAT, obj: obj, "Set model path to {}", settings.model_path);
             }
             "config-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.classes_path = value.get().unwrap();
+                settings.classes_path = settings.classes_path.trim().to_string();
                 gst_info!(
                     CAT,
                     obj: obj,
@@ -196,6 +198,7 @@ impl ObjectImpl for GstFastestDet {
             "param-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.param_path = value.get().unwrap();
+                settings.param_path = settings.param_path.trim().to_string();
                 gst_info!(CAT, obj: obj, "Set param path to {}", settings.param_path);
             }
             "run" => {
@@ -203,6 +206,28 @@ impl ObjectImpl for GstFastestDet {
                 let run = value.get().unwrap();
                 gst_info!(CAT, obj: obj, "Set run to {}", run);
                 if run {
+                    // kind: NotFound, message: "No such file or directory"
+                    let p = std::path::Path::new(&settings.classes_path);
+                    let has_root = p.has_root();
+                    let exists = p.exists();
+                    let parent = p.parent().unwrap();
+                    let all_files = parent.read_dir().unwrap();
+                    // should not separate the path by comma
+                    let file_name = p.file_name().unwrap();
+                    gst_info!(
+                        CAT,
+                        obj: obj,
+                        "model path: {:?}, has_root: {}, exists: {}, parent: {:?}, parent_exists:{}, file_name: {:?}, files: {:?}",
+                        p,
+                        has_root,
+                        exists,
+                        parent,
+                        parent.exists(),
+                        file_name,
+                        all_files
+                            .map(|f| f.unwrap().file_name().into_string().unwrap())
+                            .collect::<Vec<String>>()
+                    );
                     let classes_text = std::fs::read_to_string(settings.classes_path.clone()).expect("Unable to read classes file");
                     gst_info!(CAT, obj: obj, "Read classes toml success");
                     let classes = toml::from_str::<Classes>(&classes_text).expect("Unable to parse classes file");
