@@ -10,7 +10,7 @@ description = "Rust Tutorial Plugin"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "fastestdet"
+name = "gstfastestdet"
 crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
