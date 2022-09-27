@@ -288,8 +288,6 @@ impl ElementImpl for GstFastestDet {
     // src and sink should only support BGR
     fn pad_templates() -> &'static [gst::PadTemplate] {
         static PAD_TEMPLATES: Lazy<Vec<gst::PadTemplate>> = Lazy::new(|| {
-            // On the src pad, we can produce BGRx and GRAY8 of any
-            // width/height and with any framerate
             let caps = gst::Caps::builder("video/x-raw")
                 .field(
                     "format",
@@ -339,7 +337,16 @@ impl ElementImpl for GstFastestDet {
             )
             .unwrap();
 
-            vec![src_pad_template, sink_pad_template]
+            let text_caps = gst::Caps::builder("application/x-json").build();
+            let sink_text_pad_template = gst::PadTemplate::new(
+                "text_sink",
+                gst::PadDirection::Sink,
+                gst::PadPresence::Always,
+                &text_caps,
+            )
+            .unwrap();
+
+            vec![src_pad_template, sink_pad_template, sink_text_pad_template]
         });
 
         PAD_TEMPLATES.as_ref()
@@ -364,9 +371,10 @@ impl VideoFilterImpl for GstFastestDet {
     // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst-libs/gst/opencv/gstopencvvideofilter.cpp#L152
     // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst-libs/gst/opencv/gstopencvvideofilter.cpp#L173
     // https://gstreamer.freedesktop.org/documentation/video/gstvideofilter.html?gi-language=c#GstVideoFilterClass::transform_frame
+    // https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c
     fn transform_frame(
         &self,
-        _element: &Self::Type,
+        element: &Self::Type,
         in_frame: &gst_video::VideoFrameRef<&gst::BufferRef>,
         out_frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
@@ -394,6 +402,16 @@ impl VideoFilterImpl for GstFastestDet {
 
         let settings = self.settings.lock().unwrap();
         let det = settings.det.as_ref();
+
+        // TODO: find pad when starting
+        let sinks = element.sink_pads();
+        let text_sink = sinks.iter().find(|pad| pad.name() == "text_sink");
+        // if name == "application/x-json" {
+        //     let buffer = sink.get_sticky_event("text", 0).unwrap().get_structure().unwrap().get_value("text").unwrap().get::<String>().unwrap();
+        //     let json: serde_json::Value = serde_json::from_str(&buffer).unwrap();
+        //     let mut det = settings.det.lock().unwrap();
+        //     det.update(json);
+        // }
         match det {
             Some(det) => {
                 let mut out_mat = match unsafe {
@@ -412,6 +430,12 @@ impl VideoFilterImpl for GstFastestDet {
                 let (w, h) = (out_mat.cols(), out_mat.rows());
                 let targets = det.detect(&input, (w, h), 0.65).unwrap();
                 let nms_targets = nms_handle(&targets, 0.45);
+                if let Some(sink) = text_sink {
+                    gst_debug!(CAT, obj: element, "text sink found");
+                    let serialized = serde_json::to_string(&nms_targets).unwrap();
+                    let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
+                    sink.push(buffer).unwrap();
+                }
                 let res = paint_targets(&mut out_mat, &nms_targets, det.classes());
                 match res {
                     Ok(_) => return Ok(gst::FlowSuccess::Ok),

@@ -4,11 +4,12 @@ use ncnn_rs::{Allocator as ncnn_Allocator, Mat, Net};
 use opencv::core::Mat as CvMat;
 use opencv::core::*;
 use std::ops::Index;
+use serde_derive::{Deserialize, Serialize};
 
 // adapted from
 // https://github.com/dog-qiuqiu/FastestDet/blob/main/example/ncnn/FastestDet.cpp
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetBox {
     pub x1: i32,
     pub y1: i32,
