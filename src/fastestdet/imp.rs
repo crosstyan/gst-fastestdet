@@ -170,9 +170,10 @@ impl ObjectImpl for GstFastestDet {
                     .default_value(Some(DEFAULT_CLASSES_PATH))
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
+                // TODO: use signal to reload model
                 glib::ParamSpecBoolean::builder("run")
                     .nick("Run")
-                    .blurb("if true, run the model")
+                    .blurb("if true, try to load and run model")
                     .default_value(false)
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
@@ -373,10 +374,7 @@ impl VideoFilterImpl for GstFastestDet {
         // local variables. This saves some typing below.
         let cols = in_frame.width() as i32;
         let rows = in_frame.height() as i32;
-        let in_stride = in_frame.plane_stride()[0] as usize;
         let in_data = in_frame.plane_data(0).unwrap();
-        // Okay.I know what I'm doing. I'm sure. and I promise I won't mutate the data.
-        let in_ptr = in_data.as_ptr() as *const u8 as *mut c_void;
         let in_format = in_frame.format();
         let out_stride = out_frame.plane_stride()[0] as usize;
         let out_format = out_frame.format();
