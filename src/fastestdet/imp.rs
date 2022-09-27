@@ -108,6 +108,7 @@ impl Default for Settings {
 #[derive(Default)]
 pub struct GstFastestDet {
     settings: Mutex<Settings>,
+    text_sink: Option<gst::Pad>
 }
 
 impl GstFastestDet {
@@ -131,6 +132,15 @@ impl ObjectSubclass for GstFastestDet {
     type Type = super::GstFastestDet;
     type ParentType = gst_video::VideoFilter;
     // See ElementImpl
+
+    fn with_class(klass: &Self::Class) -> Self {
+        let templ = klass.pad_template("text_sink").unwrap();
+        let text_pad = gst::Pad::from_template(&templ, Some("text_sink"));
+        Self {
+            settings: Mutex::new(Settings::default()),
+            text_sink: Some(text_pad),
+        }
+    }
 }
 
 // VideoFilter
@@ -260,6 +270,11 @@ impl ObjectImpl for GstFastestDet {
             }
             _ => unimplemented!(),
         }
+    }
+    fn constructed(&self, obj: &Self::Type) {
+        self.parent_constructed(obj);
+        let sink = self.text_sink.as_ref().unwrap();
+        obj.add_pad(sink).unwrap();
     }
 }
 
@@ -404,14 +419,7 @@ impl VideoFilterImpl for GstFastestDet {
         let det = settings.det.as_ref();
 
         // TODO: find pad when starting
-        let sinks = element.sink_pads();
-        let text_sink = sinks.iter().find(|pad| pad.name() == "text_sink");
-        // if name == "application/x-json" {
-        //     let buffer = sink.get_sticky_event("text", 0).unwrap().get_structure().unwrap().get_value("text").unwrap().get::<String>().unwrap();
-        //     let json: serde_json::Value = serde_json::from_str(&buffer).unwrap();
-        //     let mut det = settings.det.lock().unwrap();
-        //     det.update(json);
-        // }
+        let text_sink = self.text_sink.as_ref();
         match det {
             Some(det) => {
                 let mut out_mat = match unsafe {
