@@ -142,19 +142,19 @@ impl ObjectImpl for GstFastestDet {
     fn properties() -> &'static [glib::ParamSpec] {
         static PROPERTIES: Lazy<Vec<glib::ParamSpec>> = Lazy::new(|| {
             vec![
-                glib::ParamSpecString::builder("model_path")
+                glib::ParamSpecString::builder("model-path")
                     .nick("Model")
                     .blurb("Model path which should be ended with `.bin`")
                     .default_value(Some(DEFAULT_MODEL_PATH))
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
-                glib::ParamSpecString::builder("config_path")
+                glib::ParamSpecString::builder("config-path")
                     .nick("Config")
                     .blurb("Config path which should be ended with `.toml`")
                     .default_value(Some(DEFAULT_CLASSES_PATH))
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
-                glib::ParamSpecString::builder("param_path")
+                glib::ParamSpecString::builder("param-path")
                     .nick("Param")
                     .blurb("Param path which should be ended with `.param`")
                     .default_value(Some(DEFAULT_CLASSES_PATH))
@@ -178,51 +178,64 @@ impl ObjectImpl for GstFastestDet {
         pspec: &glib::ParamSpec,
     ) {
         match pspec.name() {
-            "model_path" => {
+            "model-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.model_path = value.get().unwrap();
+                gst_info!(CAT, obj: obj, "Set model path to {}", settings.model_path);
             }
-            "config_path" => {
+            "config-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.classes_path = value.get().unwrap();
+                gst_info!(
+                    CAT,
+                    obj: obj,
+                    "Set config path to {}",
+                    settings.classes_path
+                );
             }
-            "param_path" => {
+            "param-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.param_path = value.get().unwrap();
+                gst_info!(CAT, obj: obj, "Set param path to {}", settings.param_path);
             }
             "run" => {
                 let mut settings = self.settings.lock().unwrap();
-                let classes_text = match std::fs::read_to_string(settings.classes_path.clone()) {
-                    Ok(text) => text,
-                    Err(_) => {
-                        gst::element_error!(
-                            obj,
-                            gst::ResourceError::Settings,
-                            ("Failed to read classes toml")
-                        );
-                        return;
-                    }
-                };
-                let classes = toml::from_str::<Classes>(&classes_text);
-                let c = match classes {
-                    Ok(c) => c.classes,
-                    Err(e) => {
-                        gst::element_error!(
-                            obj,
-                            gst::CoreError::Negotiation,
-                            ["Failed to parse classes: {}", e]
-                        );
-                        return;
-                    }
-                };
                 let run = value.get().unwrap();
+                gst_info!(CAT, obj: obj, "Set run to {}", run);
                 if run {
+                    let classes_text = match std::fs::read_to_string(settings.classes_path.clone())
+                    {
+                        Ok(text) => text,
+                        Err(_) => {
+                            gst::element_error!(
+                                obj,
+                                gst::ResourceError::Settings,
+                                ("Failed to read classes toml")
+                            );
+                            return;
+                        }
+                    };
+                    gst_info!(CAT, obj: obj, "Read classes toml success");
+                    let classes = toml::from_str::<Classes>(&classes_text);
+                    let c = match classes {
+                        Ok(c) => c.classes,
+                        Err(e) => {
+                            gst::element_error!(
+                                obj,
+                                gst::CoreError::Negotiation,
+                                ["Failed to parse classes: {}", e]
+                            );
+                            return;
+                        }
+                    };
+                    gst_info!(CAT, obj: obj, "Set classes success");
                     // TODO: using config
                     let model_size = (352, 352);
                     let det =
                         FastestDet::new(&settings.param_path, &settings.model_path, model_size, c);
                     match det {
                         Ok(d) => {
+                            gst_info!(CAT, obj: obj, "Loaded model");
                             settings.det = Some(d);
                         }
                         Err(e) => {
@@ -237,6 +250,28 @@ impl ObjectImpl for GstFastestDet {
                 } else {
                     settings.det = None;
                 }
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn property(&self, _obj: &Self::Type, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
+        match pspec.name() {
+            "model-path" => {
+                let settings = self.settings.lock().unwrap();
+                settings.model_path.to_value()
+            }
+            "config-path" => {
+                let settings = self.settings.lock().unwrap();
+                settings.classes_path.to_value()
+            }
+            "param-path" => {
+                let settings = self.settings.lock().unwrap();
+                settings.param_path.to_value()
+            }
+            "run" => {
+                let settings = self.settings.lock().unwrap();
+                settings.det.is_some().to_value()
             }
             _ => unimplemented!(),
         }
