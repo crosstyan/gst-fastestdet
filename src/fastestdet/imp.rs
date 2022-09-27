@@ -110,7 +110,17 @@ pub struct GstFastestDet {
     settings: Mutex<Settings>,
 }
 
-impl GstFastestDet {}
+impl GstFastestDet {
+    pub fn try_get_det(settings: &Settings) -> Result<FastestDet, anyhow::Error> {
+        let classes_text = std::fs::read_to_string(settings.classes_path.clone())?;
+        let classes = toml::from_str::<Classes>(&classes_text)?;
+        let c = classes.classes;
+        // TODO: using config
+        let model_size = (352, 352);
+        let det = FastestDet::new(&settings.param_path, &settings.model_path, model_size, c)?;
+        Ok(det)
+    }
+}
 
 // This trait registers our type with the GObject object system and
 // provides the entry points for creating a new instance and setting
@@ -180,8 +190,12 @@ impl ObjectImpl for GstFastestDet {
         match pspec.name() {
             "model-path" => {
                 let mut settings = self.settings.lock().unwrap();
+                // TODO: proper error detection
                 settings.model_path = value.get().unwrap();
                 settings.model_path = settings.model_path.trim().to_string();
+                if settings.model_path.find(",").is_some() {
+                    gst_warning!(CAT, obj: obj, "path should not contain `,`");
+                }
                 gst_info!(CAT, obj: obj, "Set model path to {}", settings.model_path);
             }
             "config-path" => {
@@ -202,48 +216,19 @@ impl ObjectImpl for GstFastestDet {
                 gst_info!(CAT, obj: obj, "Set param path to {}", settings.param_path);
             }
             "run" => {
-                let mut settings = self.settings.lock().unwrap();
+                // https://coaxion.net/blog/2016/09/writing-gstreamer-elements-in-rust-part-2-dont-panic-we-have-better-assertions-now-and-other-updates/
                 let run = value.get().unwrap();
-                gst_info!(CAT, obj: obj, "Set run to {}", run);
+                let mut settings = self.settings.lock().unwrap();
                 if run {
-                    // kind: NotFound, message: "No such file or directory"
-                    let p = std::path::Path::new(&settings.classes_path);
-                    let has_root = p.has_root();
-                    let exists = p.exists();
-                    let parent = p.parent().unwrap();
-                    let all_files = parent.read_dir().unwrap();
-                    // should not separate the path by comma
-                    let file_name = p.file_name().unwrap();
-                    gst_info!(
-                        CAT,
-                        obj: obj,
-                        "model path: {:?}, has_root: {}, exists: {}, parent: {:?}, parent_exists:{}, file_name: {:?}, files: {:?}",
-                        p,
-                        has_root,
-                        exists,
-                        parent,
-                        parent.exists(),
-                        file_name,
-                        all_files
-                            .map(|f| f.unwrap().file_name().into_string().unwrap())
-                            .collect::<Vec<String>>()
-                    );
-                    let classes_text = std::fs::read_to_string(settings.classes_path.clone()).expect("Unable to read classes file");
-                    gst_info!(CAT, obj: obj, "Read classes toml success");
-                    let classes = toml::from_str::<Classes>(&classes_text).expect("Unable to parse classes file");
-                    let c = classes.classes;
-                    gst_info!(CAT, obj: obj, "Set classes success");
-                    // TODO: using config
-                    let model_size = (352, 352);
-                    let det =
-                        FastestDet::new(&settings.param_path, &settings.model_path, model_size, c);
-                    match det {
-                        Ok(d) => {
-                            gst_info!(CAT, obj: obj, "Loaded model");
-                            settings.det = Some(d);
+                    let maybe_det = Self::try_get_det(&settings);
+                    match maybe_det {
+                        Ok(det) => {
+                            settings.det = Some(det);
+                            gst_info!(CAT, obj: obj, "model loaded");
                         }
                         Err(e) => {
-                            panic!("Unable to load model: {}", e);
+                            gst_error!(CAT, obj: obj, "Failed to create det: {}", e);
+                            panic!("Failed to create det: {}", e);
                         }
                     }
                 } else {
@@ -371,22 +356,6 @@ impl BaseTransformImpl for GstFastestDet {
     // https://gstreamer.freedesktop.org/documentation/base/gstbasetransform.html?gi-language=c#passthrough-mode
     const PASSTHROUGH_ON_SAME_CAPS: bool = false;
     const TRANSFORM_IP_ON_PASSTHROUGH: bool = false;
-
-    // Called for converting caps from one pad to another to account for any
-    // changes in the media format this element is performing.
-    //
-    // Optional. Given the pad in this direction and the given caps, what caps
-    // are allowed on the other pad in this element?  Possible formats on sink
-    // and source pad implemented with custom transform_caps function. By
-    // default uses *same format on sink and source*.
-    // https://gstreamer.freedesktop.org/documentation/base/gstbasetransform.html?gi-language=c#GstBaseTransformClass::transform_caps
-    // fn transform_caps(
-    //     &self,
-    //     element: &Self::Type,
-    //     direction: gst::PadDirection,
-    //     caps: &gst::Caps,
-    //     filter: Option<&gst::Caps>,
-    // ) -> Option<gst::Caps>
 }
 
 impl VideoFilterImpl for GstFastestDet {
@@ -470,35 +439,30 @@ impl VideoFilterImpl for GstFastestDet {
         // Okay.I know what I'm doing. I'm sure.
         let ptr = data.as_mut_ptr() as *mut c_void;
 
-        let mut out_mat = match unsafe {
-            CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, ptr, stride)
-        } {
-            Ok(mat) => mat,
-            Err(_) => return Err(gst::FlowError::Error),
-        };
-
-        let blue = Scalar::new(255.0, 255.0, 0.0, 0.0);
-        let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
-        let thickness = 2;
-        let line_type = opencv::imgproc::LINE_8;
-        let shift = 0;
-        let text = "TEST!";
-        // draw something on frame for testing
-        let res = opencv::imgproc::put_text(
-            &mut out_mat,
-            text,
-            Point::new(cols / 2, rows / 2),
-            opencv::imgproc::FONT_HERSHEY_SIMPLEX,
-            0.75,
-            blue,
-            thickness,
-            line_type,
-            false,
-        );
-        if let Err(_) = res {
-            return Err(gst::FlowError::Error);
+        // copy and paste from transform_frame
+        let settings = self.settings.lock().unwrap();
+        let det = settings.det.as_ref();
+        match det {
+            Some(det) => {
+                let mut out_mat = match unsafe {
+                    CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, ptr, stride)
+                } {
+                    Ok(mat) => mat,
+                    Err(_) => return Err(gst::FlowError::Error),
+                };
+                let input = det.preprocess(&out_mat).unwrap();
+                let (w, h) = (out_mat.cols(), out_mat.rows());
+                let targets = det.detect(&input, (w, h), 0.65).unwrap();
+                let nms_targets = nms_handle(&targets, 0.45);
+                let res = paint_targets(&mut out_mat, &nms_targets, det.classes());
+                match res {
+                    Ok(_) => return Ok(gst::FlowSuccess::Ok),
+                    Err(_) => return Err(gst::FlowError::Error),
+                }
+            }
+            None => {
+                return Ok(gst::FlowSuccess::Ok);
+            }
         }
-
-        Ok(gst::FlowSuccess::Ok)
     }
 }
