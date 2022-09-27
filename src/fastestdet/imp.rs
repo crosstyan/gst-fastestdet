@@ -355,7 +355,7 @@ impl ElementImpl for GstFastestDet {
             let text_caps = gst::Caps::builder("application/x-json").build();
             let sink_text_pad_template = gst::PadTemplate::new(
                 "text_sink",
-                gst::PadDirection::Sink,
+                gst::PadDirection::Src,
                 gst::PadPresence::Always,
                 &text_caps,
             )
@@ -439,10 +439,10 @@ impl VideoFilterImpl for GstFastestDet {
                 let targets = det.detect(&input, (w, h), 0.65).unwrap();
                 let nms_targets = nms_handle(&targets, 0.45);
                 if let Some(sink) = text_sink {
-                    gst_debug!(CAT, obj: element, "text sink found");
+                    // gst_debug!(CAT, obj: element, "text sink found");
                     let serialized = serde_json::to_string(&nms_targets).unwrap();
                     let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
-                    sink.push(buffer).unwrap();
+                    let _res = sink.push(buffer);
                 }
                 let res = paint_targets(&mut out_mat, &nms_targets, det.classes());
                 match res {
