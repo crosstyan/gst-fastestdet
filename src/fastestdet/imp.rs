@@ -186,11 +186,6 @@ impl VideoFilterImpl for FastestDet {
         in_frame: &gst_video::VideoFrameRef<&gst::BufferRef>,
         out_frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
-        // Keep a local copy of the values of all our properties at this very moment. This
-        // ensures that the mutex is never locked for long and the application wouldn't
-        // have to block until this function returns when getting/setting property values
-        // let settings = *self.settings.lock().unwrap();
-
         // Keep the various metadata we need for working with the video frames in
         // local variables. This saves some typing below.
         let cols = in_frame.width() as i32;
@@ -203,7 +198,15 @@ impl VideoFilterImpl for FastestDet {
         let out_stride = out_frame.plane_stride()[0] as usize;
         let out_format = out_frame.format();
         let out_data = out_frame.plane_data_mut(0).unwrap();
+        out_data.copy_from_slice(in_data);
         let out_ptr = out_data.as_mut_ptr() as *mut c_void;
+
+        // ~I guess out_frame has the same data as in_frame.~
+        // NO. out_frame is empty. have to copy the content manually
+        // let size = rows * in_stride as i32;
+        // unsafe {
+        //     std::ptr::copy_nonoverlapping(in_ptr, out_ptr, size as usize);
+        // }
 
         assert_eq!(in_format, gst_video::VideoFormat::Bgr);
         assert_eq!(out_format, gst_video::VideoFormat::Bgr);
@@ -221,13 +224,11 @@ impl VideoFilterImpl for FastestDet {
             Ok(mat) => mat,
             Err(_) => return Err(gst::FlowError::Error),
         };
-        // I guess out_frame has the same data as in_frame.
 
         let blue = Scalar::new(255.0, 255.0, 0.0, 0.0);
         let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
         let thickness = 2;
         let line_type = opencv::imgproc::LINE_8;
-        let shift = 0;
         let text = "TEST!";
         // draw something on frame for testing
         let res = opencv::imgproc::put_text(
