@@ -32,17 +32,17 @@ static CAT: Lazy<gst::DebugCategory> = Lazy::new(|| {
 });
 
 #[derive(Default)]
-pub struct FastestDet {}
+pub struct GstFastestDet {}
 
-impl FastestDet {}
+impl GstFastestDet {}
 
 // This trait registers our type with the GObject object system and
 // provides the entry points for creating a new instance and setting
 // up the class data
 #[glib::object_subclass]
-impl ObjectSubclass for FastestDet {
+impl ObjectSubclass for GstFastestDet {
     const NAME: &'static str = "FastestDetRs";
-    type Type = super::FastestDet;
+    type Type = super::GstFastestDet;
     type ParentType = gst_video::VideoFilter;
     // See ElementImpl
 }
@@ -60,19 +60,18 @@ GObject                                   ObjectImpl
  */
 
 // Implementation of glib::Object virtual methods
-impl ObjectImpl for FastestDet {}
+impl ObjectImpl for GstFastestDet {}
 
-impl GstObjectImpl for FastestDet {}
+impl GstObjectImpl for GstFastestDet {}
 
-// Implementation of gst::Element virtual methods
-impl ElementImpl for FastestDet {
+impl ElementImpl for GstFastestDet {
     // there's no set_metadata() in Class now
     // That part is moved to ElementImpl::metadata()
     // The tutorial is outdated
     fn metadata() -> Option<&'static gst::subclass::ElementMetadata> {
         static ELEMENT_METADATA: Lazy<gst::subclass::ElementMetadata> = Lazy::new(|| {
             gst::subclass::ElementMetadata::new(
-                "FastestDet",
+                "FastestDet Rust",
                 "Filter/Effect/Converter/Video",
                 "Run FastestDet object detection model with opencv and ncnn",
                 "Crosstyan <crosstyan@outlook.com>",
@@ -84,7 +83,7 @@ impl ElementImpl for FastestDet {
 
     // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst-libs/gst/opencv/gstopencvutils.cpp#L116
     // https://gstreamer.freedesktop.org/documentation/additional/design/element-transform.html?gi-language=c
-    // copy and paste
+    // copy and paste from tutorial
     // src and sink should only support BGR
     fn pad_templates() -> &'static [gst::PadTemplate] {
         static PAD_TEMPLATES: Lazy<Vec<gst::PadTemplate>> = Lazy::new(|| {
@@ -148,7 +147,7 @@ impl ElementImpl for FastestDet {
 
 // Implementation of gst_base::BaseTransform virtual methods
 // https://gstreamer.freedesktop.org/documentation/additional/design/element-transform.html?gi-language=c#processing
-impl BaseTransformImpl for FastestDet {
+impl BaseTransformImpl for GstFastestDet {
     // If the always_in_place flag is set, non-writable buffers will be copied and
     // passed to the transform_ip function, otherwise a new buffer will be created
     // and the transform function called.
@@ -175,7 +174,7 @@ impl BaseTransformImpl for FastestDet {
     // ) -> Option<gst::Caps>
 }
 
-impl VideoFilterImpl for FastestDet {
+impl VideoFilterImpl for GstFastestDet {
     // Does the actual transformation of the input buffer to the output buffer
     // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst-libs/gst/opencv/gstopencvvideofilter.cpp#L152
     // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst-libs/gst/opencv/gstopencvvideofilter.cpp#L173
@@ -257,9 +256,9 @@ impl VideoFilterImpl for FastestDet {
         let cols = frame.width() as i32;
         let rows = frame.height() as i32;
         let stride = frame.plane_stride()[0] as usize;
-        let data = frame.plane_data(0).unwrap();
-        // Okay.I know what I'm doing. I'm sure. and I promise I won't mutate the data.
-        let ptr = data.as_ptr() as *const u8 as *mut c_void;
+        let data = frame.plane_data_mut(0).unwrap();
+        // Okay.I know what I'm doing. I'm sure. 
+        let ptr = data.as_mut_ptr() as *mut c_void;
 
         let mut out_mat = match unsafe {
             CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, ptr, stride)

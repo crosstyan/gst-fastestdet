@@ -1,0 +1,1 @@
+export GST_PLUGIN_PATH_1_0=$(pwd)/target/debug

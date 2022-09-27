@@ -27,6 +27,8 @@ once_cell = "1.0"
 gst-app = { package = "gstreamer-app", version = "0.18.7" }
 gst-webrtc = { package = "gstreamer-webrtc", version = "0.18.7" }
 gst-sdp = { package = "gstreamer-sdp", version = "0.18.0", features = ["v1_18"] }
+ncnn-rs = { path = "rust-ncnn/ncnn-rs" }
+ncnn-bind = { path = "rust-ncnn/ncnn-bind" }
 num-traits = "0.2"
 log = "0.4"
 

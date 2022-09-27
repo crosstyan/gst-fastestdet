@@ -5,6 +5,8 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use gst::prelude::*;
 pub mod imp;
+mod fastest_det;
+mod utils;
 
 // https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/blob/main/video/hsv/src/hsvdetector/imp.rs
 // https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/blob/main/gstreamer-video/src/auto/video_filter.rs
@@ -17,7 +19,7 @@ pub mod imp;
 // https://gstreamer.freedesktop.org/documentation/video/gstvideofilter.html?gi-language=c
 
 glib::wrapper! {
-    pub struct FastestDet(ObjectSubclass<imp::FastestDet>) @extends gst_base::BaseTransform, gst::Element, gst::Object;
+    pub struct GstFastestDet(ObjectSubclass<imp::GstFastestDet>) @extends gst_base::BaseTransform, gst::Element, gst::Object;
 }
 
 // Registers the type for our element, and then registers in GStreamer under
@@ -28,6 +30,6 @@ pub fn register(plugin: &gst::Plugin) -> Result<(), glib::BoolError> {
         Some(plugin),
         "fastestdetrs",
         gst::Rank::None,
-        FastestDet::static_type(),
+        GstFastestDet::static_type(),
     )
 }
