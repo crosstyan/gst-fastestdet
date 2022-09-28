@@ -9,6 +9,7 @@ use gst_video::subclass::prelude::*;
 use opencv::core::Mat as CvMat;
 use opencv::core::*;
 use opencv::prelude::*;
+use anyhow::bail;
 use serde_derive::{Deserialize, Serialize};
 
 use std::ffi::c_void;
@@ -108,7 +109,12 @@ impl Default for Settings {
 #[derive(Default)]
 pub struct GstFastestDet {
     settings: Mutex<Settings>,
-    text_sink: Option<gst::Pad>
+    /// `text_pad` here should be an output, which outputs the json of the detected objects.
+    /// `src` is the output port of the bin.
+    /// `sink` is the input port of the bin.
+    /// See also `TargetBox` in `fastest_det.rs`.
+    /// See also [why call the output port of a element to "src pad" in gstreamer?](https://superuser.com/questions/1400417/why-call-the-output-port-of-a-element-to-src-pad-in-gstreamer)
+    text_pad: Option<gst::Pad>
 }
 
 impl GstFastestDet {
@@ -120,6 +126,29 @@ impl GstFastestDet {
         let model_size = (352, 352);
         let det = FastestDet::new(&settings.param_path, &settings.model_path, model_size, c)?;
         Ok(det)
+    }
+    /// side effect/not pure
+    /// the function will paint the targets on the image
+    /// and push the targets to the text src
+    pub fn detect_push(&self, det:&FastestDet,mat: &mut CvMat) -> Result<(), anyhow::Error> {
+                let text_src = self.text_pad.as_ref();
+                let input = det.preprocess(&mat).unwrap();
+                let (w, h) = (mat.cols(), mat.rows());
+                let targets = det.detect(&input, (w, h), 0.65).unwrap();
+                let nms_targets = nms_handle(&targets, 0.45);
+                if let Some(pad) = text_src {
+                    let serialized = serde_json::to_string(&nms_targets)?;
+                    let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
+                    // early return when error
+                    match pad.push(buffer) {
+                        Ok(_) => (),
+                        Err(e) => bail!("failed to push buffer to text pad: {}", e),
+                    };
+                }
+                match paint_targets(mat, &nms_targets, det.classes()) {
+                    Ok(_) => Ok(()),
+                    Err(_) => bail!("paint_targets failed"),
+                }
     }
 }
 
@@ -134,11 +163,11 @@ impl ObjectSubclass for GstFastestDet {
     // See ElementImpl
 
     fn with_class(klass: &Self::Class) -> Self {
-        let templ = klass.pad_template("text_sink").unwrap();
-        let text_pad = gst::Pad::from_template(&templ, Some("text_sink"));
+        let templ = klass.pad_template("text_pad").unwrap();
+        let text_pad = gst::Pad::from_template(&templ, Some("text_pad"));
         Self {
             settings: Mutex::new(Settings::default()),
-            text_sink: Some(text_pad),
+            text_pad: Some(text_pad),
         }
     }
 }
@@ -273,8 +302,8 @@ impl ObjectImpl for GstFastestDet {
     }
     fn constructed(&self, obj: &Self::Type) {
         self.parent_constructed(obj);
-        let sink = self.text_sink.as_ref().unwrap();
-        obj.add_pad(sink).unwrap();
+        let pad = self.text_pad.as_ref().unwrap();
+        obj.add_pad(pad).unwrap();
     }
 }
 
@@ -353,15 +382,15 @@ impl ElementImpl for GstFastestDet {
             .unwrap();
 
             let text_caps = gst::Caps::builder("application/x-json").build();
-            let sink_text_pad_template = gst::PadTemplate::new(
-                "text_sink",
+            let src_text_pad_template = gst::PadTemplate::new(
+                "text_pad",
                 gst::PadDirection::Src,
                 gst::PadPresence::Always,
                 &text_caps,
             )
             .unwrap();
 
-            vec![src_pad_template, sink_pad_template, sink_text_pad_template]
+            vec![src_pad_template, sink_pad_template, src_text_pad_template]
         });
 
         PAD_TEMPLATES.as_ref()
@@ -389,7 +418,7 @@ impl VideoFilterImpl for GstFastestDet {
     // https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c
     fn transform_frame(
         &self,
-        element: &Self::Type,
+        _element: &Self::Type,
         in_frame: &gst_video::VideoFrameRef<&gst::BufferRef>,
         out_frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
@@ -418,8 +447,6 @@ impl VideoFilterImpl for GstFastestDet {
         let settings = self.settings.lock().unwrap();
         let det = settings.det.as_ref();
 
-        // TODO: find pad when starting
-        let text_sink = self.text_sink.as_ref();
         match det {
             Some(det) => {
                 let mut out_mat = match unsafe {
@@ -434,21 +461,10 @@ impl VideoFilterImpl for GstFastestDet {
                     Ok(mat) => mat,
                     Err(_) => return Err(gst::FlowError::Error),
                 };
-                let input = det.preprocess(&out_mat).unwrap();
-                let (w, h) = (out_mat.cols(), out_mat.rows());
-                let targets = det.detect(&input, (w, h), 0.65).unwrap();
-                let nms_targets = nms_handle(&targets, 0.45);
-                if let Some(sink) = text_sink {
-                    // gst_debug!(CAT, obj: element, "text sink found");
-                    let serialized = serde_json::to_string(&nms_targets).unwrap();
-                    let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
-                    let _res = sink.push(buffer);
-                }
-                let res = paint_targets(&mut out_mat, &nms_targets, det.classes());
-                match res {
+                match self.detect_push(&det, &mut out_mat) {
                     Ok(_) => return Ok(gst::FlowSuccess::Ok),
                     Err(_) => return Err(gst::FlowError::Error),
-                }
+                };
             }
             None => {
                 return Ok(gst::FlowSuccess::Ok);
@@ -472,23 +488,20 @@ impl VideoFilterImpl for GstFastestDet {
         // copy and paste from transform_frame
         let settings = self.settings.lock().unwrap();
         let det = settings.det.as_ref();
+
         match det {
             Some(det) => {
                 let mut out_mat = match unsafe {
+                    // Mat created with `new_rows_cols_with_data` will NOT own the data.
                     CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, ptr, stride)
                 } {
                     Ok(mat) => mat,
                     Err(_) => return Err(gst::FlowError::Error),
                 };
-                let input = det.preprocess(&out_mat).unwrap();
-                let (w, h) = (out_mat.cols(), out_mat.rows());
-                let targets = det.detect(&input, (w, h), 0.65).unwrap();
-                let nms_targets = nms_handle(&targets, 0.45);
-                let res = paint_targets(&mut out_mat, &nms_targets, det.classes());
-                match res {
+                match self.detect_push(&det, &mut out_mat) {
                     Ok(_) => return Ok(gst::FlowSuccess::Ok),
                     Err(_) => return Err(gst::FlowError::Error),
-                }
+                };
             }
             None => {
                 return Ok(gst::FlowSuccess::Ok);
