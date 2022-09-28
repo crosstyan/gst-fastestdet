@@ -139,11 +139,11 @@ impl GstFastestDet {
                 if let Some(pad) = text_src {
                     let serialized = serde_json::to_string(&nms_targets)?;
                     let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
-                    // early return when error
-                    match pad.push(buffer) {
-                        Ok(_) => (),
-                        Err(e) => bail!("failed to push buffer to text pad: {}", e),
-                    };
+                    // ignore the error
+                    // if there is no downstream element, the error will be FlowError
+                    // But we use probe to get the buffer, so no downstream element is ok.
+                    // No error should be raised.
+                    let _ = pad.push(buffer);
                 }
                 match paint_targets(mat, &nms_targets, det.classes()) {
                     Ok(_) => Ok(()),
