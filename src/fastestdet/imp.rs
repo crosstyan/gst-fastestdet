@@ -1,6 +1,7 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
 use super::fastest_det::{nms_handle, FastestDet, TargetBox};
+use anyhow::bail;
 use gst::prelude::*;
 use gst::subclass::prelude::*;
 use gst::{gst_debug, gst_error, gst_info, gst_log, gst_trace, gst_warning};
@@ -9,7 +10,6 @@ use gst_video::subclass::prelude::*;
 use opencv::core::Mat as CvMat;
 use opencv::core::*;
 use opencv::prelude::*;
-use anyhow::bail;
 use serde_derive::{Deserialize, Serialize};
 
 use std::ffi::c_void;
@@ -92,6 +92,7 @@ pub struct Settings {
     model_path: String,
     param_path: String,
     classes_path: String,
+    is_paint: bool,
     det: Option<FastestDet>,
 }
 
@@ -101,6 +102,7 @@ impl Default for Settings {
             model_path: DEFAULT_MODEL_PATH.to_string(),
             param_path: DEFAULT_PARAM_PATH.to_string(),
             classes_path: DEFAULT_CLASSES_PATH.to_string(),
+            is_paint: false,
             det: None,
         }
     }
@@ -114,7 +116,7 @@ pub struct GstFastestDet {
     /// `sink` is the input port of the bin.
     /// See also `TargetBox` in `fastest_det.rs`.
     /// See also [why call the output port of a element to "src pad" in gstreamer?](https://superuser.com/questions/1400417/why-call-the-output-port-of-a-element-to-src-pad-in-gstreamer)
-    text_pad: Option<gst::Pad>
+    text_pad: Option<gst::Pad>,
 }
 
 impl GstFastestDet {
@@ -130,25 +132,34 @@ impl GstFastestDet {
     /// side effect/not pure
     /// the function will paint the targets on the image
     /// and push the targets to the text src
-    pub fn detect_push(&self, det:&FastestDet,mat: &mut CvMat) -> Result<(), anyhow::Error> {
-                let text_src = self.text_pad.as_ref();
-                let input = det.preprocess(&mat).unwrap();
-                let (w, h) = (mat.cols(), mat.rows());
-                let targets = det.detect(&input, (w, h), 0.65).unwrap();
-                let nms_targets = nms_handle(&targets, 0.45);
-                if let Some(pad) = text_src {
-                    let serialized = serde_json::to_string(&nms_targets)?;
-                    let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
-                    // ignore the error
-                    // if there is no downstream element, the error will be FlowError
-                    // But we use probe to get the buffer, so no downstream element is ok.
-                    // No error should be raised.
-                    let _ = pad.push(buffer);
-                }
-                match paint_targets(mat, &nms_targets, det.classes()) {
-                    Ok(_) => Ok(()),
-                    Err(_) => bail!("paint_targets failed"),
-                }
+    pub fn detect_push(
+        &self,
+        det: &FastestDet,
+        mat: &mut CvMat,
+        is_paint: bool,
+    ) -> Result<(), anyhow::Error> {
+        let text_src = self.text_pad.as_ref();
+        let input = det.preprocess(&mat).unwrap();
+        let (w, h) = (mat.cols(), mat.rows());
+        let targets = det.detect(&input, (w, h), 0.65).unwrap();
+        let nms_targets = nms_handle(&targets, 0.45);
+        if let Some(pad) = text_src {
+            let serialized = serde_json::to_string(&nms_targets)?;
+            let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
+            // ignore the error
+            // if there is no downstream element, the error will be FlowError
+            // But we use probe to get the buffer, so no downstream element is ok.
+            // No error should be raised.
+            let _ = pad.push(buffer);
+        }
+        if is_paint {
+            match paint_targets(mat, &nms_targets, det.classes()) {
+                Ok(_) => Ok(()),
+                Err(_) => bail!("paint_targets failed"),
+            }
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -209,6 +220,12 @@ impl ObjectImpl for GstFastestDet {
                     .default_value(Some(DEFAULT_CLASSES_PATH))
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
+                glib::ParamSpecBoolean::builder("is-paint")
+                    .nick("Is paint")
+                    .blurb("if true, the recognition result will be painted on the image")
+                    .default_value(false)
+                    .flags(glib::ParamFlags::READWRITE)
+                    .build(),
                 // TODO: use signal to reload model
                 glib::ParamSpecBoolean::builder("run")
                     .nick("Run")
@@ -255,6 +272,11 @@ impl ObjectImpl for GstFastestDet {
                 settings.param_path = settings.param_path.trim().to_string();
                 gst_info!(CAT, obj: obj, "Set param path to {}", settings.param_path);
             }
+            "is-paint" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.is_paint = value.get().unwrap();
+                gst_info!(CAT, obj: obj, "Set is_paint to {}", settings.is_paint);
+            }
             "run" => {
                 // https://coaxion.net/blog/2016/09/writing-gstreamer-elements-in-rust-part-2-dont-panic-we-have-better-assertions-now-and-other-updates/
                 let run = value.get().unwrap();
@@ -292,6 +314,10 @@ impl ObjectImpl for GstFastestDet {
             "param-path" => {
                 let settings = self.settings.lock().unwrap();
                 settings.param_path.to_value()
+            }
+            "is-paint" => {
+                let settings = self.settings.lock().unwrap();
+                settings.is_paint.to_value()
             }
             "run" => {
                 let settings = self.settings.lock().unwrap();
@@ -461,7 +487,7 @@ impl VideoFilterImpl for GstFastestDet {
                     Ok(mat) => mat,
                     Err(_) => return Err(gst::FlowError::Error),
                 };
-                match self.detect_push(&det, &mut out_mat) {
+                match self.detect_push(&det, &mut out_mat, settings.is_paint) {
                     Ok(_) => return Ok(gst::FlowSuccess::Ok),
                     Err(_) => return Err(gst::FlowError::Error),
                 };
@@ -498,7 +524,7 @@ impl VideoFilterImpl for GstFastestDet {
                     Ok(mat) => mat,
                     Err(_) => return Err(gst::FlowError::Error),
                 };
-                match self.detect_push(&det, &mut out_mat) {
+                match self.detect_push(&det, &mut out_mat, settings.is_paint) {
                     Ok(_) => return Ok(gst::FlowSuccess::Ok),
                     Err(_) => return Err(gst::FlowError::Error),
                 };
