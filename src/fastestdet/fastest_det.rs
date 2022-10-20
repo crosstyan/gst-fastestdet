@@ -86,6 +86,10 @@ pub struct FastestDet {
 unsafe impl Send for FastestDet {}
 unsafe impl Sync for FastestDet {}
 
+// const bias
+// https://github.com/crosstyan/YoloFastestExample/blob/fe1d25c4e6709511f5e32090516dd8b808b12dd0/lib/yolo/yolo-fastestv2.cpp#L34
+const ANCHOR: [f32; 12] = [12.64f32, 19.39, 37.88, 51.48, 55.71, 138.31,126.91, 78.23, 131.57, 214.55, 279.92, 258.87];
+
 impl FastestDet {
     /// model_size: (width, height)
     pub fn new<P>(
@@ -149,69 +153,96 @@ impl FastestDet {
         Ok(input)
     }
 
-    pub fn detect(&self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>> {
+    pub fn detect(&self, input: &Mat, img_size: (i32, i32), thresh: f32, output_name: &str, output_index: i32) -> Result<Vec<TargetBox>> {
         let ex = self.net.create_extractor();
         // magic string
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L142
+        // 
+        // https://github.com/crosstyan/YoloFastestExample/blob/eccd6d557750833041b6e51d5ab8a7c26adc0d16/lib/yolo/yolo-fastestv2.cpp#L204
+        // 模型输入输出节点名称
+        // inputName = "input.1";
+        // outputName1 = "794"; //22x22
+        // outputName2 = "796"; //11x11
         if let Err(e) = ex.input("input.1", input) {
             bail!("ex.input error: {}", e);
         };
         let mut output = Mat::new();
         // magic name
-        if let Err(e) = ex.extract("758", &mut output) {
+        if let Err(e) = ex.extract(output_name, &mut output) {
             bail!("ex.extract error: {}", e);
         };
         let mut target_boxes: Vec<TargetBox> = Vec::new();
-        let (img_width, img_height) = img_size;
         let out_h = output.get_h();
         let out_w = output.get_w();
+        //模型输入尺寸大小
+        // 352 is a magic number
+        let (input_w, input_h) = (352, 352);
+        let (img_w, img_h) = img_size;
+        // https://github.com/crosstyan/YoloFastestExample/blob/fe1d25c4e6709511f5e32090516dd8b808b12dd0/lib/yolo/yolo-fastestv2.cpp#L184
+        let scale_w = img_w as f32 / input_w as f32;
+        let scale_h = img_h as f32 / input_h as f32;
+        dbg!(input_h, input_w, out_h, out_w, scale_h, scale_w);
+        // input_h = 352
+        // input_w = 352
+        // out_h = 11
+        // out_w = 95
+        // why out_w is 95?
+        // it should be 11x11 or 22x22
+        assert!(input_h/out_h == input_w/out_w);
+        // https://github.com/crosstyan/YoloFastestExample/blob/fe1d25c4e6709511f5e32090516dd8b808b12dd0/lib/yolo/yolo-fastestv2.cpp#L142
+        let stride = input_w as f32 / out_w as f32;
         let class_num = self.classes.len();
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L152
+        // https://github.com/crosstyan/YoloFastestExample/blob/eccd6d557750833041b6e51d5ab8a7c26adc0d16/lib/yolo/yolo-fastestv2.cpp#L111
+        // it use anchor...? what is anchor?
+        // numAnchor = 3;
+        let anchor_num = 3;
         for h in 0..out_h {
             for w in 0..out_w {
-                let obj_score_idx = (0 * out_h * out_w) + (h * out_w) + w;
-                let obj_score = output.index(obj_score_idx as isize);
-                let mut max_score: f32 = 0.0;
-                let mut class_index = 0;
-                for idx in 0..class_num {
-                    let idx = idx as i32;
-                    // why 5? magic number?
-                    // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L165
-                    let score_idx = ((idx + 5) * out_h * out_w) + (h * out_w) + w;
-                    let score = output.index(score_idx as isize).clone();
-                    if score > max_score {
-                        max_score = score;
-                        class_index = idx;
+                for b in 0..anchor_num{
+                    let obj_score_idx = 4 * anchor_num + b;
+                    let obj_score = output.index(obj_score_idx as isize);
+                    let mut max_score: f32 = 0.0;
+                    let mut class_index = 0;
+                    // https://github.com/crosstyan/YoloFastestExample/blob/eccd6d557750833041b6e51d5ab8a7c26adc0d16/lib/yolo/yolo-fastestv2.cpp#L111
+                    // 4 is a magic number as well as anchor_num
+                    // I didn't train the model, so I don't know why...
+                    for idx in 0..class_num {
+                        let idx = idx as i32;
+                        let score_idx = 4 * anchor_num + anchor_num + b;
+                        let score = output.index(score_idx as isize).clone();
+                        let cls_score = score * obj_score;
+                        if score > max_score {
+                            max_score = cls_score;
+                            class_index = idx;
+                        }
                     }
-                }
-                let score = max_score.powf(0.4) * obj_score.powf(0.6);
-                if score > thresh {
-                    let x_offset_index = (1 * out_h * out_w) + (h * out_w) + w;
-                    let y_offset_index = (2 * out_h * out_w) + (h * out_w) + w;
-                    let box_width_index = (3 * out_h * out_w) + (h * out_w) + w;
-                    let box_height_index = (4 * out_h * out_w) + (h * out_w) + w;
+                    let score = max_score;
+                    if score > thresh {
+                        let val_x = *output.index(b * 4 + 0);
+                        let val_y = *output.index(b * 4 + 1);
+                        let val_w = *output.index(b * 4 + 2);
+                        let val_h = *output.index(b * 4 + 3);
+                        let bcx = ((val_x * 2.0 - 0.5) + w as f32) * stride;
+                        let bcy = ((val_y * 2.0 - 0.5) + h as f32) * stride;
+                        let bw = ((val_w * 2.0).powf(2.0)) * ANCHOR[(output_index * anchor_num as i32 * 2 + b as i32 * 2 + 0) as usize];
+                        let bh = ((val_h * 2.0).powf(2.0)) * ANCHOR[(output_index * anchor_num as i32 * 2 + b as i32 * 2 + 1) as usize];
 
-                    let x_offset = output.index(x_offset_index as isize).tanh();
-                    let y_offset = output.index(y_offset_index as isize).tanh();
-                    let box_width = output.index(box_width_index as isize).sigmoid();
-                    let box_height = output.index(box_height_index as isize).sigmoid();
+                        let x1 = ((bcx - 0.5 * bw) * scale_w as f32) as i32;
+                        let y1 = ((bcy - 0.5 * bh) * scale_h as f32) as i32;
+                        let x2 = ((bcx + 0.5 * bw) * scale_w as f32) as i32;
+                        let y2 = ((bcy + 0.5 * bh) * scale_h as f32) as i32;
 
-                    let cx = (w as f32 + x_offset) / out_w as f32;
-                    let cy = (h as f32 + y_offset) / out_h as f32;
-
-                    let x1 = ((cx - box_width * 0.5) * img_width as f32) as i32;
-                    let y1 = ((cy - box_height * 0.5) * img_height as f32) as i32;
-                    let x2 = ((cx + box_width * 0.5) * img_width as f32) as i32;
-                    let y2 = ((cy + box_height * 0.5) * img_height as f32) as i32;
-                    let target_box = TargetBox {
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        score,
-                        class: class_index,
-                    };
-                    target_boxes.push(target_box);
+                        let target_box = TargetBox {
+                            x1,
+                            y1,
+                            x2,
+                            y2,
+                            score,
+                            class: class_index,
+                        };
+                        target_boxes.push(target_box);
+                    }
                 }
             }
         }
