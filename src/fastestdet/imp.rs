@@ -1,15 +1,13 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
 use super::fastest_det::{nms_handle, FastestDet, TargetBox};
-use anyhow::bail;
 use gst::prelude::*;
 use gst::subclass::prelude::*;
-use gst::{gst_debug, gst_error, gst_info, gst_log, gst_trace, gst_warning};
+// use gst::{gst_debug, gst_error, gst_info, gst_log, gst_trace, gst_warning};
+use gst::{debug, error_msg, info, trace, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
-use opencv::core::Mat as CvMat;
-use opencv::core::*;
-use opencv::prelude::*;
+use image::RgbImage;
 use serde_derive::{Deserialize, Serialize};
 
 use std::ffi::c_void;
@@ -36,48 +34,6 @@ static CAT: Lazy<gst::DebugCategory> = Lazy::new(|| {
         Some("Rust FastestDet Element"),
     )
 });
-
-// https://gstreamer.freedesktop.org/documentation/application-development/advanced/buffering.html?gi-language=c#timeshift-buffering
-pub fn paint_targets(
-    paint_img: &mut CvMat,
-    targets: &Vec<TargetBox>,
-    classes: &Vec<String>,
-) -> Result<(), anyhow::Error> {
-    for target in targets.iter() {
-        let blue = Scalar::new(255.0, 255.0, 0.0, 0.0);
-        let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
-        let thickness = 2;
-        let line_type = opencv::imgproc::LINE_8;
-        let shift = 0;
-        opencv::imgproc::rectangle(
-            paint_img,
-            Rect::new(
-                target.x1,
-                target.y1,
-                target.x2 - target.x1,
-                target.y2 - target.y1,
-            ),
-            blue,
-            thickness,
-            line_type,
-            shift,
-        )?;
-        let class_name = classes.index(target.class as usize);
-        let text = format!("{}: {:.2}", class_name, target.score);
-        opencv::imgproc::put_text(
-            paint_img,
-            &text,
-            Point::new(target.x1, target.y1),
-            opencv::imgproc::FONT_HERSHEY_SIMPLEX,
-            0.75,
-            green,
-            thickness,
-            line_type,
-            false,
-        )?;
-    }
-    Ok(())
-}
 
 #[derive(Deserialize, Debug)]
 struct Classes {
@@ -135,12 +91,12 @@ impl GstFastestDet {
     pub fn detect_push(
         &self,
         det: &FastestDet,
-        mat: &mut CvMat,
+        mat: &mut RgbImage,
         is_paint: bool,
     ) -> Result<(), anyhow::Error> {
         let text_src = self.text_pad.as_ref();
         let input = det.preprocess(&mat).unwrap();
-        let (w, h) = (mat.cols(), mat.rows());
+        let (w, h) = (mat.width() as i32, mat.height() as i32);
         let targets = det.detect(&input, (w, h), 0.65).unwrap();
         let nms_targets = nms_handle(&targets, 0.45);
         if let Some(pad) = text_src {
@@ -153,10 +109,7 @@ impl GstFastestDet {
             let _ = pad.push(buffer);
         }
         if is_paint {
-            match paint_targets(mat, &nms_targets, det.classes()) {
-                Ok(_) => Ok(()),
-                Err(_) => bail!("paint_targets failed"),
-            }
+            unimplemented!();
         } else {
             Ok(())
         }
@@ -237,13 +190,7 @@ impl ObjectImpl for GstFastestDet {
         });
         PROPERTIES.as_ref()
     }
-    fn set_property(
-        &self,
-        obj: &Self::Type,
-        _id: usize,
-        value: &glib::Value,
-        pspec: &glib::ParamSpec,
-    ) {
+    fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
         match pspec.name() {
             "model-path" => {
                 let mut settings = self.settings.lock().unwrap();
@@ -251,31 +198,26 @@ impl ObjectImpl for GstFastestDet {
                 settings.model_path = value.get().unwrap();
                 settings.model_path = settings.model_path.trim().to_string();
                 if settings.model_path.find(",").is_some() {
-                    gst_warning!(CAT, obj: obj, "path should not contain `,`");
+                    warning!(CAT, "path should not contain `,`");
                 }
-                gst_info!(CAT, obj: obj, "Set model path to {}", settings.model_path);
+                info!(CAT, "Set model path to {}", settings.model_path);
             }
             "config-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.classes_path = value.get().unwrap();
                 settings.classes_path = settings.classes_path.trim().to_string();
-                gst_info!(
-                    CAT,
-                    obj: obj,
-                    "Set config path to {}",
-                    settings.classes_path
-                );
+                info!(CAT, "Set config path to {}", settings.classes_path);
             }
             "param-path" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.param_path = value.get().unwrap();
                 settings.param_path = settings.param_path.trim().to_string();
-                gst_info!(CAT, obj: obj, "Set param path to {}", settings.param_path);
+                info!(CAT, "Set param path to {}", settings.param_path);
             }
             "is-paint" => {
                 let mut settings = self.settings.lock().unwrap();
                 settings.is_paint = value.get().unwrap();
-                gst_info!(CAT, obj: obj, "Set is_paint to {}", settings.is_paint);
+                info!(CAT, "Set is_paint to {}", settings.is_paint);
             }
             "run" => {
                 // https://coaxion.net/blog/2016/09/writing-gstreamer-elements-in-rust-part-2-dont-panic-we-have-better-assertions-now-and-other-updates/
@@ -286,10 +228,10 @@ impl ObjectImpl for GstFastestDet {
                     match maybe_det {
                         Ok(det) => {
                             settings.det = Some(det);
-                            gst_info!(CAT, obj: obj, "model loaded");
+                            info!(CAT, "model loaded");
                         }
                         Err(e) => {
-                            gst_error!(CAT, obj: obj, "Failed to create det: {}", e);
+                            info!(CAT, "Failed to create det: {}", e);
                             panic!("Failed to create det: {}", e);
                         }
                     }
@@ -301,7 +243,7 @@ impl ObjectImpl for GstFastestDet {
         }
     }
 
-    fn property(&self, _obj: &Self::Type, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
+    fn property(&self, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
         match pspec.name() {
             "model-path" => {
                 let settings = self.settings.lock().unwrap();
@@ -326,8 +268,10 @@ impl ObjectImpl for GstFastestDet {
             _ => unimplemented!(),
         }
     }
-    fn constructed(&self, obj: &Self::Type) {
-        self.parent_constructed(obj);
+    fn constructed(&self) {
+        self.parent_constructed();
+        // https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/blob/main/text/json/src/jsongstenc/imp.rs#L218
+        let obj = self.obj();
         let pad = self.text_pad.as_ref().unwrap();
         obj.add_pad(pad).unwrap();
     }
@@ -444,21 +388,19 @@ impl VideoFilterImpl for GstFastestDet {
     // https://gstreamer.freedesktop.org/documentation/application-development/advanced/pipeline-manipulation.html?gi-language=c
     fn transform_frame(
         &self,
-        _element: &Self::Type,
         in_frame: &gst_video::VideoFrameRef<&gst::BufferRef>,
         out_frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
         // Keep the various metadata we need for working with the video frames in
         // local variables. This saves some typing below.
-        let cols = in_frame.width() as i32;
-        let rows = in_frame.height() as i32;
+        let cols = in_frame.width();
+        let rows = in_frame.height();
         let in_data = in_frame.plane_data(0).unwrap();
         let in_format = in_frame.format();
         let out_stride = out_frame.plane_stride()[0] as usize;
         let out_format = out_frame.format();
         let out_data = out_frame.plane_data_mut(0).unwrap();
         out_data.copy_from_slice(in_data);
-        let out_ptr = out_data.as_mut_ptr() as *mut c_void;
 
         // ~I guess out_frame has the same data as in_frame.~
         // NO. out_frame is empty. have to copy the content manually
@@ -475,21 +417,17 @@ impl VideoFilterImpl for GstFastestDet {
 
         match det {
             Some(det) => {
-                let mut out_mat = match unsafe {
-                    CvMat::new_rows_cols_with_data(
-                        rows,
-                        cols,
-                        opencv::core::CV_8UC3,
-                        out_ptr,
-                        out_stride,
-                    )
-                } {
-                    Ok(mat) => mat,
-                    Err(_) => return Err(gst::FlowError::Error),
-                };
-                match self.detect_push(&det, &mut out_mat, settings.is_paint) {
-                    Ok(_) => return Ok(gst::FlowSuccess::Ok),
-                    Err(_) => return Err(gst::FlowError::Error),
+                let mut out_mat = image::RgbImage::from_raw(cols, rows, out_data.to_vec());
+                match out_mat {
+                    Some(ref mut out_mat) => {
+                        match self.detect_push(&det, out_mat, settings.is_paint) {
+                            Ok(_) => return Ok(gst::FlowSuccess::Ok),
+                            Err(_) => return Err(gst::FlowError::Error),
+                        };
+                    }
+                    None => {
+                        return Err(gst::FlowError::Error);
+                    }
                 };
             }
             None => {
@@ -501,7 +439,6 @@ impl VideoFilterImpl for GstFastestDet {
 
     fn transform_frame_ip(
         &self,
-        _element: &Self::Type,
         frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
         let cols = frame.width() as i32;
@@ -517,17 +454,7 @@ impl VideoFilterImpl for GstFastestDet {
 
         match det {
             Some(det) => {
-                let mut out_mat = match unsafe {
-                    // Mat created with `new_rows_cols_with_data` will NOT own the data.
-                    CvMat::new_rows_cols_with_data(rows, cols, opencv::core::CV_8UC3, ptr, stride)
-                } {
-                    Ok(mat) => mat,
-                    Err(_) => return Err(gst::FlowError::Error),
-                };
-                match self.detect_push(&det, &mut out_mat, settings.is_paint) {
-                    Ok(_) => return Ok(gst::FlowSuccess::Ok),
-                    Err(_) => return Err(gst::FlowError::Error),
-                };
+                unimplemented!();
             }
             None => {
                 return Ok(gst::FlowSuccess::Ok);

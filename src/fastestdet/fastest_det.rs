@@ -1,9 +1,8 @@
 use super::utils::*;
 use anyhow::{bail, Result};
 use ncnn_rs::{Allocator as ncnn_Allocator, Mat, Net};
-use opencv::core::Mat as CvMat;
-use opencv::core::*;
 use std::ops::Index;
+use image::{RgbImage};
 use serde_derive::{Deserialize, Serialize};
 
 // adapted from
@@ -115,16 +114,19 @@ impl FastestDet {
 
     // https://github.com/Tencent/ncnn/blob/bae2ee375fe025776d18a489a92a7f2357af7312/src/c_api.h#L103
     /// I assume you will read it from OpenCV so the colorspace is BGR!
-    pub fn preprocess(&self, img: &CvMat) -> Result<Mat> {
+    pub fn preprocess(&self, img: &RgbImage) -> Result<Mat> {
         let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
         let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
-        let img_size = (img.cols(), img.rows());
-        let img_data = unsafe { std::slice::from_raw_parts(img.data(), img.total() as usize) };
+        let img_size = (img.width() as i32, img.height() as i32);
+        let img_data = img.as_flat_samples().samples;
+        // NOTE: not sure whether it is correct
+        // https://blog.csdn.net/qianqing13579/article/details/45318279
+        let (chn_stride, width_stride, height_stride) = img.as_flat_samples().strides_cwh();
+        // Add this to an index to get to the sample in the next channel.
+        // what...?
+        assert!(chn_stride == 3);
+        let stride = width_stride * chn_stride;
         // stride = cols * channels = 500 * 3 = 1500
-        let stride = match img.step1(0) {
-            Ok(s) => s,
-            Err(e) => bail!("img.step1(0) failed: {:?}", e),
-        };
         // https://github.com/Tencent/ncnn/blob/5eb56b2ea5a99fb5a3d6f3669ef1743b73a9a53e/src/mat.h#L261
         // https://learn.microsoft.com/en-us/windows/win32/medfound/image-stride
         // https://stackoverflow.com/questions/11572156/stride-on-image-using-opencv-c
