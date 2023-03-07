@@ -454,29 +454,4 @@ impl VideoFilterImpl for GstFastestDet {
         }
         // Ok(gst::FlowSuccess::Ok)
     }
-
-    fn transform_frame_ip(
-        &self,
-        frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
-    ) -> Result<gst::FlowSuccess, gst::FlowError> {
-        let cols = frame.width() as i32;
-        let rows = frame.height() as i32;
-        let stride = frame.plane_stride()[0] as usize;
-        let data = frame.plane_data_mut(0).unwrap();
-        // Okay.I know what I'm doing. I'm sure.
-        let ptr = data.as_mut_ptr() as *mut c_void;
-
-        // copy and paste from transform_frame
-        let settings = self.settings.lock().unwrap();
-        let det = settings.det.as_ref();
-
-        match det {
-            Some(det) => {
-                unimplemented!();
-            }
-            None => {
-                return Ok(gst::FlowSuccess::Ok);
-            }
-        }
-    }
 }
