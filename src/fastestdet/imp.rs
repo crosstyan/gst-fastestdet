@@ -10,16 +10,14 @@ use gst_video::subclass::prelude::*;
 use image::RgbImage;
 use rusttype::{Font, Scale};
 use serde_derive::{Deserialize, Serialize};
-
-use std::ffi::c_void;
-
 use std::i32;
 use std::ops::Index;
 use std::sync::Mutex;
-
 use once_cell::sync::Lazy;
 
-static FONT:[u8; include_bytes!("DejaVuSans.ttf").len()] = *include_bytes!("DejaVuSans.ttf");
+static FONT:Lazy<&[u8]> = Lazy::new(|| {
+    include_bytes!("DejaVuSans.ttf")
+});
 
 // VideoInfo is a struct that contains various fields like width/height,
 // framerate and the video format and allows to conveniently with the
