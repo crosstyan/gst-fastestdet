@@ -475,9 +475,7 @@ dependencies = [
  "gstreamer",
  "gstreamer-app",
  "gstreamer-base",
- "gstreamer-sdp",
  "gstreamer-video",
- "gstreamer-webrtc",
  "image",
  "imageproc",
  "log",
@@ -485,6 +483,7 @@ dependencies = [
  "ncnn-rs",
  "num-traits",
  "once_cell",
+ "rusttype",
  "serde",
  "serde_derive",
  "serde_json",
@@ -584,29 +583,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gstreamer-sdp"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bb57c03bfdbb0489bcab6e9b58a2c059e6089dcf660b424949dbe672af726bf"
-dependencies = [
- "glib",
- "gstreamer",
- "gstreamer-sdp-sys",
-]
-
-[[package]]
-name = "gstreamer-sdp-sys"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be9ae71a2d53659f6da93a83ebe06de12c9e075604e012c45644499b24474e1a"
-dependencies = [
- "glib-sys",
- "gstreamer-sys",
- "libc",
- "system-deps",
-]
-
-[[package]]
 name = "gstreamer-sys"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -644,32 +620,6 @@ dependencies = [
  "glib-sys",
  "gobject-sys",
  "gstreamer-base-sys",
- "gstreamer-sys",
- "libc",
- "system-deps",
-]
-
-[[package]]
-name = "gstreamer-webrtc"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d75c3eded9dd927711b010961e0e57abc26506735601b9167ce61abe79d358b"
-dependencies = [
- "glib",
- "gstreamer",
- "gstreamer-sdp",
- "gstreamer-webrtc-sys",
- "libc",
-]
-
-[[package]]
-name = "gstreamer-webrtc-sys"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6feeb7a38db02ec4a0fb91e4e02da6c8448a7caa16b64128927b31e581e7bfa"
-dependencies = [
- "glib-sys",
- "gstreamer-sdp-sys",
  "gstreamer-sys",
  "libc",
  "system-deps",

@@ -1,8 +1,4 @@
 use gst::glib;
-use gst_base::subclass::prelude::*;
-use std::i32;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
 use gst::prelude::*;
 pub mod imp;
 mod fastest_det;

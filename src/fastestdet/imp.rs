@@ -8,6 +8,7 @@ use gst::{debug, error_msg, info, trace, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
 use image::RgbImage;
+use rusttype::{Font, Scale};
 use serde_derive::{Deserialize, Serialize};
 
 use std::ffi::c_void;
@@ -17,6 +18,8 @@ use std::ops::Index;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
+
+static FONT:[u8; include_bytes!("DejaVuSans.ttf").len()] = *include_bytes!("DejaVuSans.ttf");
 
 // VideoInfo is a struct that contains various fields like width/height,
 // framerate and the video format and allows to conveniently with the
@@ -64,6 +67,21 @@ impl Default for Settings {
     }
 }
 
+pub fn paint_targets(paint_img:&mut RgbImage, targets: &Vec<TargetBox>, classes:&Vec<String>) -> Result<(), anyhow::Error> {
+    for target in targets.iter(){
+        let (x1, y1, x2, y2) = (target.x1 as u32, target.y1 as u32, target.x2 as u32, target.y2 as u32);
+        let rect = imageproc::rect::Rect::at(x1 as i32, y1 as i32).of_size(x2-x1, y2-y1).try_into()?;
+        let color = image::Rgb([0, 128, 128]);
+        imageproc::drawing::draw_hollow_rect_mut(paint_img, rect, color);
+        let class_name = classes.index(target.class as usize);
+        let font = Font::try_from_bytes(&FONT).ok_or(anyhow::anyhow!("font error"))?;
+        let height = 12.4;
+        let scale = Scale{x:height, y:height};
+        imageproc::drawing::draw_text_mut(paint_img, color, x1 as i32, y1 as i32, scale, &font, class_name);
+    }
+    Ok(())
+}
+
 #[derive(Default)]
 pub struct GstFastestDet {
     settings: Mutex<Settings>,
@@ -109,7 +127,7 @@ impl GstFastestDet {
             let _ = pad.push(buffer);
         }
         if is_paint {
-            unimplemented!();
+            paint_targets(mat, &nms_targets, &det.classes())
         } else {
             Ok(())
         }
