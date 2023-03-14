@@ -294,13 +294,13 @@ impl ElementImpl for GstFastestDet {
     // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst-libs/gst/opencv/gstopencvutils.cpp#L116
     // https://gstreamer.freedesktop.org/documentation/additional/design/element-transform.html?gi-language=c
     // copy and paste from tutorial
-    // src and sink should only support BGR
+    // src and sink should only support Rgb (image crate)
     fn pad_templates() -> &'static [gst::PadTemplate] {
         static PAD_TEMPLATES: Lazy<Vec<gst::PadTemplate>> = Lazy::new(|| {
             let caps = gst::Caps::builder("video/x-raw")
                 .field(
                     "format",
-                    gst::List::new([gst_video::VideoFormat::Bgr.to_str()]),
+                    gst::List::new([gst_video::VideoFormat::Rgb.to_str()]),
                 )
                 .field("width", gst::IntRange::new(0, i32::MAX))
                 .field("height", gst::IntRange::new(0, i32::MAX))
@@ -325,7 +325,7 @@ impl ElementImpl for GstFastestDet {
             // On the sink pad, we can accept BGR of any
             // width/height and with any framerate
             let caps = gst::Caps::builder("video/x-raw")
-                .field("format", gst_video::VideoFormat::Bgr.to_str())
+                .field("format", gst_video::VideoFormat::Rgb.to_str())
                 .field("width", gst::IntRange::new(0, i32::MAX))
                 .field("height", gst::IntRange::new(0, i32::MAX))
                 .field(
@@ -397,15 +397,14 @@ impl VideoFilterImpl for GstFastestDet {
         let out_data = out_frame.plane_data_mut(0).unwrap();
         out_data.copy_from_slice(in_data);
 
-        // ~I guess out_frame has the same data as in_frame.~
-        // NO. out_frame is empty. have to copy the content manually
+        // Out_frame is empty. have to copy the content manually
         // let size = rows * in_stride as i32;
         // unsafe {
         //     std::ptr::copy_nonoverlapping(in_ptr, out_ptr, size as usize);
         // }
 
-        assert_eq!(in_format, gst_video::VideoFormat::Bgr);
-        assert_eq!(out_format, gst_video::VideoFormat::Bgr);
+        assert_eq!(in_format, gst_video::VideoFormat::Rgb);
+        assert_eq!(out_format, gst_video::VideoFormat::Rgb);
 
         let settings = self.settings.lock().unwrap();
         let det = settings.det.as_ref();
