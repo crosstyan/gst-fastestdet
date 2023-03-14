@@ -1,7 +1,7 @@
 use gst::glib;
 use gst::prelude::*;
 pub mod imp;
-mod fastest_det;
+pub mod fastest_det;
 mod utils;
 
 // https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/blob/main/video/hsv/src/hsvdetector/imp.rs

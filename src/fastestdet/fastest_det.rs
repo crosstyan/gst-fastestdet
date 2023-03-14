@@ -1,12 +1,17 @@
+// adapted from
+// https://github.com/dog-qiuqiu/FastestDet/blob/main/example/ncnn/FastestDet.cpp
 use super::utils::*;
 use anyhow::{bail, Result};
 use ncnn_rs::{Allocator as ncnn_Allocator, Mat, Net};
 use std::ops::Index;
 use image::{RgbImage};
 use serde_derive::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
+use rusttype::{Font, Scale};
 
-// adapted from
-// https://github.com/dog-qiuqiu/FastestDet/blob/main/example/ncnn/FastestDet.cpp
+static FONT:Lazy<&[u8]> = Lazy::new(|| {
+    include_bytes!("DejaVuSans.ttf")
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetBox {
@@ -31,6 +36,22 @@ impl TargetBox {
     pub fn intersection_area(&self, other: &TargetBox) -> i32 {
         intersection_area(self, other)
     }
+}
+
+pub fn paint_targets(paint_img:&mut RgbImage, targets: &Vec<TargetBox>, classes:&Vec<String>) -> Result<(), anyhow::Error> {
+    for target in targets.iter(){
+        let (x1, y1, x2, y2) = (target.x1 as u32, target.y1 as u32, target.x2 as u32, target.y2 as u32);
+        let rect = imageproc::rect::Rect::at(x1 as i32, y1 as i32).of_size(x2-x1, y2-y1).try_into()?;
+        let color_text = image::Rgb([242, 255, 128]);
+        let color = image::Rgb([0, 255, 2]);
+        imageproc::drawing::draw_hollow_rect_mut(paint_img, rect, color);
+        let class_name = classes.index(target.class as usize);
+        let font = Font::try_from_bytes(&FONT).ok_or(anyhow::anyhow!("font error"))?;
+        let height = 24.8;
+        let scale = Scale{x:height, y:height};
+        imageproc::drawing::draw_text_mut(paint_img, color_text, x1 as i32, y1 as i32, scale, &font, class_name);
+    }
+    Ok(())
 }
 
 pub fn intersection_area(a: &TargetBox, b: &TargetBox) -> i32 {
@@ -113,7 +134,7 @@ impl FastestDet {
     }
 
     // https://github.com/Tencent/ncnn/blob/bae2ee375fe025776d18a489a92a7f2357af7312/src/c_api.h#L103
-    /// I assume you will read it from OpenCV so the colorspace is BGR!
+    /// I assume you will read it from image crate with RgbImage
     pub fn preprocess(&self, img: &RgbImage) -> Result<Mat> {
         let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
         let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
@@ -124,8 +145,10 @@ impl FastestDet {
         let (chn_stride, width_stride, height_stride) = img.as_flat_samples().strides_cwh();
         // Add this to an index to get to the sample in the next channel.
         // what...?
-        assert!(chn_stride == 3);
-        let stride = width_stride * chn_stride;
+        // dbg!(chn_stride, width_stride, height_stride);
+        // dbg!(img.width(), img.height());
+        // assert!(chn_stride == 3);
+        let stride = height_stride;
         // stride = cols * channels = 500 * 3 = 1500
         // https://github.com/Tencent/ncnn/blob/5eb56b2ea5a99fb5a3d6f3669ef1743b73a9a53e/src/mat.h#L261
         // https://learn.microsoft.com/en-us/windows/win32/medfound/image-stride
