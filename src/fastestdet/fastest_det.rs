@@ -3,7 +3,7 @@
 use super::utils::*;
 use anyhow::{bail, Result};
 use image::{ImageBuffer, Rgb};
-use ncnn_rs::{Allocator as ncnn_Allocator, Mat, Net};
+use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net};
 use once_cell::sync::Lazy;
 use rusttype::{Font, Scale};
 use serde_derive::{Deserialize, Serialize};
@@ -111,7 +111,7 @@ pub fn nms_handle(boxes: &[TargetBox], nms_threshold: f32) -> Vec<TargetBox> {
 }
 
 pub struct FastestDet {
-    alloc: ncnn_Allocator,
+    alloc: NcnnAllocator,
     net: Net,
     classes: Vec<String>,
     /// 模型输入宽高
@@ -135,7 +135,7 @@ impl FastestDet {
         P: AsRef<str>,
     {
         let fastest_det = FastestDet {
-            alloc: ncnn_Allocator::new(),
+            alloc: NcnnAllocator::new(),
             net: Net::new(),
             classes,
             model_size,
@@ -161,7 +161,7 @@ impl FastestDet {
         let img_data = img.as_flat_samples().samples;
         // NOTE: not sure whether it is correct
         // https://blog.csdn.net/qianqing13579/article/details/45318279
-        let (chn_stride, width_stride, height_stride) = img.as_flat_samples().strides_cwh();
+        let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
         // Add this to an index to get to the sample in the next channel.
         // what...?
         // dbg!(chn_stride, width_stride, height_stride);
@@ -183,7 +183,7 @@ impl FastestDet {
         // calculated as cols*elemSize() .
         let mut input = Mat::from_pixels_resize(
             img_data,
-            ncnn_bind::NCNN_MAT_PIXEL_BGR as i32,
+            ncnn_bind::NCNN_MAT_PIXEL_RGB as i32,
             img_size,
             stride as i32,
             self.model_size,
