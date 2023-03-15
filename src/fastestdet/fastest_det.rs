@@ -14,7 +14,7 @@ static FONT: Lazy<&[u8]> = Lazy::new(|| include_bytes!("DejaVuSans.ttf"));
 /// trait aliases are experimental
 ///
 /// ```rust
-/// trait D = Deref<Target = [u8]>+DerefMut<Target=[u8]>;
+/// trait D = Deref<Target = [u8]> + DerefMut<Target=[u8]> + AsRef<[u8]>;
 /// ```
 pub type RgbBuffer<T> = ImageBuffer<Rgb<u8>, T>;
 

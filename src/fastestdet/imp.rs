@@ -175,7 +175,7 @@ impl ObjectImpl for GstFastestDet {
                 glib::ParamSpecBoolean::builder("is-paint")
                     .nick("Is paint")
                     .blurb("if true, the recognition result will be painted on the image")
-                    .default_value(false)
+                    .default_value(true)
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
                 // TODO: use signal to reload model
