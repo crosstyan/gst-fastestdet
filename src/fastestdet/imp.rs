@@ -1,17 +1,18 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
-use super::fastest_det::{nms_handle, FastestDet, TargetBox, paint_targets};
+use super::fastest_det::{nms_handle, FastestDet, TargetBox, paint_targets, RgbBuffer};
 use gst::prelude::*;
 use gst::subclass::prelude::*;
 use gst::{debug, error_msg, info, trace, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
-use image::RgbImage;
+use image::{RgbImage, Rgb};
 use serde_derive::{Deserialize, Serialize};
 use std::i32;
-use std::ops::Index;
+use std::ops::Not;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
+use std::ops::{Deref, DerefMut, Index};
 
 // VideoInfo is a struct that contains various fields like width/height,
 // framerate and the video format and allows to conveniently with the
@@ -83,16 +84,16 @@ impl GstFastestDet {
     /// side effect/not pure
     /// the function will paint the targets on the image
     /// and push the targets to the text src
-    pub fn detect_push(
+    pub fn detect_push<T:Deref<Target = [u8]>+DerefMut<Target=[u8]>+AsRef<[u8]>>(
         &self,
         det: &FastestDet,
-        mat: &mut RgbImage,
+        mat: &mut RgbBuffer<T>,
         is_paint: bool,
     ) -> Result<(), anyhow::Error> {
         let text_src = self.text_pad.as_ref();
-        let input = det.preprocess(&mat).unwrap();
+        let input = det.preprocess(&mat)?;
         let (w, h) = (mat.width() as i32, mat.height() as i32);
-        let targets = det.detect(&input, (w, h), 0.65).unwrap();
+        let targets = det.detect(&input, (w, h), 0.65)?;
         let nms_targets = nms_handle(&targets, 0.45);
         if let Some(pad) = text_src {
             let serialized = serde_json::to_string(&nms_targets)?;
@@ -104,6 +105,9 @@ impl GstFastestDet {
             let _ = pad.push(buffer);
         }
         if is_paint {
+            if nms_targets.is_empty().not() {
+                debug!(CAT, "painting targets:{:?}", nms_targets);
+            }
             paint_targets(mat, &nms_targets, &det.classes())
         } else {
             Ok(())
@@ -392,7 +396,6 @@ impl VideoFilterImpl for GstFastestDet {
         let rows = in_frame.height();
         let in_data = in_frame.plane_data(0).unwrap();
         let in_format = in_frame.format();
-        // let out_stride = out_frame.plane_stride()[0] as usize;
         let out_format = out_frame.format();
         let out_data = out_frame.plane_data_mut(0).unwrap();
         out_data.copy_from_slice(in_data);
@@ -411,7 +414,8 @@ impl VideoFilterImpl for GstFastestDet {
 
         match det {
             Some(det) => {
-                let mut out_mat = image::RgbImage::from_raw(cols, rows, out_data.to_vec());
+                // Don't use `to_vec` since it will create new buffer by copy
+                let mut out_mat = image::ImageBuffer::from_raw(cols, rows, out_data);
                 match out_mat {
                     Some(ref mut out_mat) => {
                         match self.detect_push(&det, out_mat, settings.is_paint) {

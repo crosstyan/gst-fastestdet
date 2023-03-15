@@ -2,16 +2,21 @@
 // https://github.com/dog-qiuqiu/FastestDet/blob/main/example/ncnn/FastestDet.cpp
 use super::utils::*;
 use anyhow::{bail, Result};
+use image::{ImageBuffer, Rgb};
 use ncnn_rs::{Allocator as ncnn_Allocator, Mat, Net};
-use std::ops::Index;
-use image::{RgbImage};
-use serde_derive::{Deserialize, Serialize};
 use once_cell::sync::Lazy;
 use rusttype::{Font, Scale};
+use serde_derive::{Deserialize, Serialize};
+use std::ops::{Deref, DerefMut, Index};
 
-static FONT:Lazy<&[u8]> = Lazy::new(|| {
-    include_bytes!("DejaVuSans.ttf")
-});
+static FONT: Lazy<&[u8]> = Lazy::new(|| include_bytes!("DejaVuSans.ttf"));
+
+/// trait aliases are experimental
+///
+/// ```rust
+/// trait D = Deref<Target = [u8]>+DerefMut<Target=[u8]>;
+/// ```
+pub type RgbBuffer<T> = ImageBuffer<Rgb<u8>, T>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TargetBox {
@@ -38,18 +43,29 @@ impl TargetBox {
     }
 }
 
-pub fn paint_targets(paint_img:&mut RgbImage, targets: &Vec<TargetBox>, classes:&Vec<String>) -> Result<(), anyhow::Error> {
-    for target in targets.iter(){
-        let (x1, y1, x2, y2) = (target.x1 as u32, target.y1 as u32, target.x2 as u32, target.y2 as u32);
-        let rect = imageproc::rect::Rect::at(x1 as i32, y1 as i32).of_size(x2-x1, y2-y1).try_into()?;
+pub fn paint_targets<T: Deref<Target = [u8]> + DerefMut<Target = [u8]>>(
+    paint_img: &mut RgbBuffer<T>,
+    targets: &Vec<TargetBox>,
+    classes: &Vec<String>,
+) -> Result<(), anyhow::Error> {
+    for target in targets.iter() {
+        let (x1, y1, x2, y2) = (target.x1, target.y1, target.x2, target.y2);
+        let rect = imageproc::rect::Rect::at(x1 as i32, y1 as i32)
+            .of_size((x2 - x1).try_into().unwrap(), (y2 - y1).try_into().unwrap())
+            .try_into()?;
         let color_text = image::Rgb([242, 255, 128]);
         let color = image::Rgb([0, 255, 2]);
         imageproc::drawing::draw_hollow_rect_mut(paint_img, rect, color);
         let class_name = classes.index(target.class as usize);
         let font = Font::try_from_bytes(&FONT).ok_or(anyhow::anyhow!("font error"))?;
         let height = 24.8;
-        let scale = Scale{x:height, y:height};
-        imageproc::drawing::draw_text_mut(paint_img, color_text, x1 as i32, y1 as i32, scale, &font, class_name);
+        let scale = Scale {
+            x: height,
+            y: height,
+        };
+        imageproc::drawing::draw_text_mut(
+            paint_img, color_text, x1 as i32, y1 as i32, scale, &font, class_name,
+        );
     }
     Ok(())
 }
@@ -134,8 +150,11 @@ impl FastestDet {
     }
 
     // https://github.com/Tencent/ncnn/blob/bae2ee375fe025776d18a489a92a7f2357af7312/src/c_api.h#L103
-    /// I assume you will read it from image crate with RgbImage
-    pub fn preprocess(&self, img: &RgbImage) -> Result<Mat> {
+    /// I assume you will read it from image crate with
+    pub fn preprocess<T: Deref<Target = [u8]> + AsRef<[u8]>>(
+        &self,
+        img: &RgbBuffer<T>,
+    ) -> Result<Mat> {
         let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
         let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
         let img_size = (img.width() as i32, img.height() as i32);
