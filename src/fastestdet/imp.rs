@@ -1,17 +1,17 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
-use super::fastest_det::{nms_handle, FastestDet, TargetBox, paint_targets, RgbBuffer};
+use super::fastest_det::{nms_handle, paint_targets, FastestDet, RgbBuffer, TargetBox};
 use gst::prelude::*;
 use gst::subclass::prelude::*;
 use gst::{debug, error_msg, info, trace, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
+use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 use std::i32;
 use std::ops::Not;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
 use std::ops::{Deref, DerefMut, Index};
+use std::sync::Mutex;
 
 // VideoInfo is a struct that contains various fields like width/height,
 // framerate and the video format and allows to conveniently with the
@@ -83,7 +83,7 @@ impl GstFastestDet {
     /// side effect/not pure
     /// the function will paint the targets on the image
     /// and push the targets to the text src
-    pub fn detect_push<T:Deref<Target = [u8]>+DerefMut<Target=[u8]>+AsRef<[u8]>>(
+    pub fn detect_push<T: Deref<Target = [u8]> + DerefMut<Target = [u8]> + AsRef<[u8]>>(
         &self,
         det: &mut FastestDet,
         mat: &mut RgbBuffer<T>,
@@ -432,6 +432,39 @@ impl VideoFilterImpl for GstFastestDet {
                 return Ok(gst::FlowSuccess::Ok);
             }
         }
-        // Ok(gst::FlowSuccess::Ok)
+    }
+
+    fn transform_frame_ip(
+        &self,
+        frame: &mut gst_video::VideoFrameRef<&mut gst::BufferRef>,
+    ) -> Result<gst::FlowSuccess, gst::FlowError> {
+        let cols = frame.width();
+        let rows = frame.height();
+        // modify the buffer in place
+        let data = frame.plane_data_mut(0).unwrap();
+
+        let mut settings = self.settings.lock().unwrap();
+        let is_paint = settings.is_paint;
+        let det = settings.det.as_mut();
+
+        match det {
+            Some(det) => {
+                let mut out_mat = image::ImageBuffer::from_raw(cols, rows, data);
+                match out_mat {
+                    Some(ref mut out_mat) => {
+                        match self.detect_push(det, out_mat, is_paint) {
+                            Ok(_) => return Ok(gst::FlowSuccess::Ok),
+                            Err(_) => return Err(gst::FlowError::Error),
+                        };
+                    }
+                    None => {
+                        return Err(gst::FlowError::Error);
+                    }
+                };
+            }
+            None => {
+                return Ok(gst::FlowSuccess::Ok);
+            }
+        }
     }
 }
