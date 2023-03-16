@@ -6,7 +6,6 @@ use gst::subclass::prelude::*;
 use gst::{debug, error_msg, info, trace, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
-use image::{RgbImage, Rgb};
 use serde_derive::{Deserialize, Serialize};
 use std::i32;
 use std::ops::Not;
