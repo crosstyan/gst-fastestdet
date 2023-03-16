@@ -37,7 +37,7 @@ pub fn main() -> Result<(), anyhow::Error>{
   let (w, h) = (img.width() as i32, img.height() as i32);
   let content = std::fs::read_to_string(args.classes_path)?;
   let classes = toml::from_str::<Classes>(&content)?.classes;
-  let det = FastestDet::new(
+  let mut det = FastestDet::new(
     args.param_path,
     args.model_path,
     (352, 352),

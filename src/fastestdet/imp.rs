@@ -85,7 +85,7 @@ impl GstFastestDet {
     /// and push the targets to the text src
     pub fn detect_push<T:Deref<Target = [u8]>+DerefMut<Target=[u8]>+AsRef<[u8]>>(
         &self,
-        det: &FastestDet,
+        det: &mut FastestDet,
         mat: &mut RgbBuffer<T>,
         is_paint: bool,
     ) -> Result<(), anyhow::Error> {
@@ -408,8 +408,9 @@ impl VideoFilterImpl for GstFastestDet {
         assert_eq!(in_format, gst_video::VideoFormat::Rgb);
         assert_eq!(out_format, gst_video::VideoFormat::Rgb);
 
-        let settings = self.settings.lock().unwrap();
-        let det = settings.det.as_ref();
+        let mut settings = self.settings.lock().unwrap();
+        let is_paint = settings.is_paint;
+        let det = settings.det.as_mut();
 
         match det {
             Some(det) => {
@@ -417,7 +418,7 @@ impl VideoFilterImpl for GstFastestDet {
                 let mut out_mat = image::ImageBuffer::from_raw(cols, rows, out_data);
                 match out_mat {
                     Some(ref mut out_mat) => {
-                        match self.detect_push(&det, out_mat, settings.is_paint) {
+                        match self.detect_push(det, out_mat, is_paint) {
                             Ok(_) => return Ok(gst::FlowSuccess::Ok),
                             Err(_) => return Err(gst::FlowError::Error),
                         };

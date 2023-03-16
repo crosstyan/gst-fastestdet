@@ -36,8 +36,8 @@ gst-app = { package = "gstreamer-app", version = "0.20" }
 # gst-sdp = { package = "gstreamer-sdp", version = "0.20", features = [
 #   "v1_18",
 # ] }
-ncnn-rs = { path = "rust-ncnn/ncnn-rs" }
-ncnn-bind = { path = "rust-ncnn/ncnn-bind" }
+ncnn-rs = { path = "lib/rust-ncnn/ncnn-rs" }
+ncnn-bind = { path = "lib/rust-ncnn/ncnn-bind" }
 num-traits = "0.2"
 log = "0.4"
 rusttype = "0.9.3"

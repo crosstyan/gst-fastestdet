@@ -3,7 +3,7 @@
 use super::utils::*;
 use anyhow::{bail, Result};
 use image::{ImageBuffer, Rgb};
-use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net};
+use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net, Extractor};
 use once_cell::sync::Lazy;
 use rusttype::{Font, Scale};
 use serde_derive::{Deserialize, Serialize};
@@ -134,8 +134,8 @@ impl FastestDet {
     where
         P: AsRef<str>,
     {
-        let fastest_det = FastestDet {
-            alloc: NcnnAllocator::new(),
+        let mut fastest_det = FastestDet {
+            alloc: unsafe{NcnnAllocator::new()} ,
             net: Net::new(),
             classes,
             model_size,
@@ -193,8 +193,8 @@ impl FastestDet {
         Ok(input)
     }
 
-    pub fn detect(&self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>> {
-        let ex = self.net.create_extractor();
+    pub fn detect(&mut self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>> {
+        let mut ex = self.net.create_extractor();
         // magic string
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L142
         if let Err(e) = ex.input("input.1", input) {
@@ -207,8 +207,8 @@ impl FastestDet {
         };
         let mut target_boxes: Vec<TargetBox> = Vec::new();
         let (img_width, img_height) = img_size;
-        let out_h = output.get_h();
-        let out_w = output.get_w();
+        let out_h = output.h();
+        let out_w = output.w();
         let class_num = self.classes.len();
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L152
         for h in 0..out_h {
