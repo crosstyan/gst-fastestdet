@@ -339,7 +339,7 @@ impl ElementImpl for GstFastestDet {
                     ),
                 )
                 .build();
-            // The sink pad template must be named "sink" for basetransform
+            // The sink pad template must be named "sink" for base transform
             // and specific a pad that is always there
             let sink_pad_template = gst::PadTemplate::new(
                 "sink",
