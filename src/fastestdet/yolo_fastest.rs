@@ -90,9 +90,11 @@ impl ImageModel for YoloFastest {
             bail!("ex.extract error: {}", e);
         };
         let mut target_boxes: Vec<TargetBox> = Vec::new();
-        let (scale_w, scale_h) = img_size;
+        let (input_height, input_width) = self.model_size;
+        let (img_w, img_h) = img_size;
+        let scale_w = img_w as f32 / input_width as f32;
+        let scale_h = img_h as f32 / input_height as f32;
         for (i, output) in outputs.iter().enumerate() {
-            let (input_height, input_width) = self.model_size;
             let out_h = output.c();
             let out_w = output.h();
             let out_c = output.w();
