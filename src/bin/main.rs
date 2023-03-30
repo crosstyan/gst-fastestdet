@@ -1,5 +1,6 @@
 use clap::{ArgAction, Parser};
-use gstfastestdet::fastestdet::fastest_det::{FastestDet, nms_handle, paint_targets};
+use gstfastestdet::fastestdet::common::{nms_handle, paint_targets, ImageModel};
+use gstfastestdet::fastestdet::fastest_det::FastestDet;
 use serde_derive::{Deserialize, Serialize};
 
 #[derive(Parser, Debug)]
@@ -48,7 +49,7 @@ pub fn main() -> Result<(), anyhow::Error>{
   let targets = det.detect(&mat, (w, h), 0.65).unwrap();
   let nms_targets = nms_handle(&targets, args.nms_threshold);
   dbg!(&nms_targets);
-  paint_targets(rgb_img, &nms_targets, det.classes())?;
+  paint_targets(rgb_img, &nms_targets, det.labels())?;
   rgb_img.save(args.output)?;
   Ok(())
 }

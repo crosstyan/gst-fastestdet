@@ -1,6 +1,7 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
-use super::fastest_det::{nms_handle, paint_targets, FastestDet, RgbBuffer, TargetBox};
+use super::common::{nms_handle, paint_targets, ImageModel, RgbBuffer, TargetBox};
+use super::fastest_det::FastestDet;
 use gst::prelude::*;
 use gst::subclass::prelude::*;
 use gst::{debug, error_msg, info, trace, warning};
@@ -83,9 +84,12 @@ impl GstFastestDet {
     /// side effect/not pure
     /// the function will paint the targets on the image
     /// and push the targets to the text src
-    pub fn detect_push<T: Deref<Target = [u8]> + DerefMut<Target = [u8]> + AsRef<[u8]>>(
+    pub fn detect_push<
+        T: Deref<Target = [u8]> + DerefMut<Target = [u8]> + AsRef<[u8]>,
+        M: ImageModel,
+    >(
         &self,
-        det: &mut FastestDet,
+        det: &mut M,
         mat: &mut RgbBuffer<T>,
         is_paint: bool,
     ) -> Result<(), anyhow::Error> {
@@ -107,7 +111,7 @@ impl GstFastestDet {
             if nms_targets.is_empty().not() {
                 debug!(CAT, "painting targets:{:?}", nms_targets);
             }
-            paint_targets(mat, &nms_targets, &det.classes())
+            paint_targets(mat, &nms_targets, &det.labels())
         } else {
             Ok(())
         }
