@@ -1,6 +1,6 @@
 use image::{ImageBuffer, Rgb};
-use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net, Extractor};
-use anyhow::{bail, Result};
+use ncnn_rs::{Mat};
+use anyhow::{Result};
 use once_cell::sync::Lazy;
 use rusttype::{Font, Scale};
 use serde_derive::{Deserialize, Serialize};

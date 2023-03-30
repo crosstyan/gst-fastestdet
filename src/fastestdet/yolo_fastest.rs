@@ -1,10 +1,10 @@
 // adapted from
 // https://github.com/dog-qiuqiu/FastestDet/blob/main/example/ncnn/FastestDet.cpp
 use super::common::{ImageModel, RgbBuffer, TargetBox};
-use super::utils::*;
+
 use anyhow::{bail, Result};
-use ncnn_rs::{Allocator as NcnnAllocator, Extractor, Mat, Net};
-use std::ops::{Deref, Index};
+use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net, MatView};
+use std::ops::{Deref};
 
 const num_anchor: usize = 3;
 const anchor: [f32; 12] = [
@@ -24,13 +24,13 @@ unsafe impl Sync for YoloFastest {}
 
 /// See also `getCategory`
 /// return (Category, Index, Score)
-fn category_score<T>(values: &Mat, index: isize, category: &[T]) -> (String, usize, f32)
+fn category_score<T>(values: &[f32], index: usize, category: &[T]) -> (String, usize, f32)
 where
     T: AsRef<str>,
 {
-    let n_anchor = num_anchor as isize;
-    let num_category = category.len() as isize;
-    let obj_score = values[4 * n_anchor + index];
+    let n_anchor = num_anchor;
+    let num_category = category.len();
+    let obj_score = values[4 * n_anchor + index as usize];
     let (idx, score) = (0..num_category)
         .map(|i| {
             let score = values[4 * n_anchor + n_anchor + i];
@@ -100,18 +100,18 @@ impl ImageModel for YoloFastest {
             let stride = input_height / out_h;
             // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L152
             for h in 0..out_h {
-                let mut values = unsafe { output.channel(h) };
+                let mut values = unsafe { output.channel_slice(h) };
                 for w in 0..out_w {
                     for b in 0..num_anchor {
-                        let b = b as isize;
-                        let (_, idx, score) = category_score(&output, b, &self.classes);
+                        let b = b;
+                        let (_, idx, score) = category_score(&values, b, &self.classes);
                         if score > thresh {
                             let bcx = (values[b * 4 + 0] * 2.0 - 0.5 + w as f32) * stride as f32;
                             let bcy = (values[b * 4 + 1] * 2.0 - 0.5 + h as f32) * stride as f32;
-                            let bw = (values[b * 4 + 2].powi(2)
-                                * anchor[(i * num_anchor * 2) + b as usize * 2 + 0]);
-                            let bh = (values[b * 4 + 3].powi(2)
-                                * anchor[(i * num_anchor * 2) + b as usize * 2 + 1]);
+                            let bw = values[b * 4 + 2].powi(2)
+                                * anchor[(i * num_anchor * 2) + b as usize * 2 + 0];
+                            let bh = values[b * 4 + 3].powi(2)
+                                * anchor[(i * num_anchor * 2) + b as usize * 2 + 1];
                             let x1 = ((bcx - bw / 2.0) / scale_w as f32) as i32;
                             let x2 = ((bcx + bw / 2.0) / scale_w as f32) as i32;
                             let y1 = ((bcy - bh / 2.0) / scale_h as f32) as i32;
@@ -127,11 +127,10 @@ impl ImageModel for YoloFastest {
                             target_boxes.push(target);
                         }
                     }
-                    let new_vals = unsafe {
-                        let p = *(values.as_mut_ptr().offset(out_c as isize));
-                        Mat::from_ptr(p)
+                    unsafe {
+                        let p = (values.as_ptr().offset(out_c as isize)) as *mut f32;
+                        values = std::slice::from_raw_parts_mut(p, std::usize::MAX);
                     };
-                    values = new_vals;
                 }
             }
         }

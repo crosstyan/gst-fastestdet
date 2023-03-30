@@ -1,17 +1,17 @@
 use gst::glib;
 // use gst::glib::subclass::prelude::*;
-use super::common::{nms_handle, paint_targets, ImageModel, RgbBuffer, TargetBox};
+use super::common::{nms_handle, paint_targets, ImageModel, RgbBuffer};
 use super::fastest_det::FastestDet;
 use gst::prelude::*;
 use gst::subclass::prelude::*;
-use gst::{debug, error_msg, info, trace, warning};
+use gst::{debug, info, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
 use once_cell::sync::Lazy;
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::{Deserialize};
 use std::i32;
 use std::ops::Not;
-use std::ops::{Deref, DerefMut, Index};
+use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 
 // VideoInfo is a struct that contains various fields like width/height,

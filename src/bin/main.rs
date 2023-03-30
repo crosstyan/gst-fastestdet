@@ -1,7 +1,8 @@
-use clap::{ArgAction, Parser};
+use clap::{Parser};
 use gstfastestdet::fastestdet::common::{nms_handle, paint_targets, ImageModel};
 use gstfastestdet::fastestdet::fastest_det::FastestDet;
-use serde_derive::{Deserialize, Serialize};
+use gstfastestdet::fastestdet::yolo_fastest::YoloFastest;
+use serde_derive::{Deserialize};
 
 #[derive(Parser, Debug)]
 #[command(author, about, long_about = None)]
@@ -38,10 +39,15 @@ pub fn main() -> Result<(), anyhow::Error>{
   let (w, h) = (img.width() as i32, img.height() as i32);
   let content = std::fs::read_to_string(args.classes_path)?;
   let classes = toml::from_str::<Classes>(&content)?.classes;
-  let mut det = FastestDet::new(
+  // let mut det = FastestDet::new(
+  //   args.param_path,
+  //   args.model_path,
+  //   (352, 352),
+  //   classes
+  // )?;
+  let mut det = YoloFastest::new(
     args.param_path,
     args.model_path,
-    (352, 352),
     classes
   )?;
   let rgb_img = img.as_mut_rgb8().ok_or(anyhow::anyhow!("not rgb8"))?;

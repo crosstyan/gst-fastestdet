@@ -3,8 +3,8 @@
 use super::common::{ImageModel, RgbBuffer, TargetBox};
 use super::utils::*;
 use anyhow::{bail, Result};
-use ncnn_rs::{Allocator as NcnnAllocator, Extractor, Mat, Net};
-use std::ops::{Deref, DerefMut, Index};
+use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net};
+use std::ops::{Deref, Index};
 
 pub struct FastestDet {
     alloc: NcnnAllocator,
