@@ -1,0 +1,27 @@
+[
+{
+  "directory": "/root/code/gst-fastestdet/example/build",
+  "command": "/usr/bin/clang++ -I../fmt/include -I../CLI11/include -I../include -I/usr/local/include/ncnn -isystem /usr/include/opencv4  -fopenmp=libomp -g -std=gnu++17 -o CMakeFiles/yolo-fastestv2.dir/yolo-fastestv2.cpp.o -c /root/code/gst-fastestdet/example/yolo-fastestv2.cpp",
+  "file": "/root/code/gst-fastestdet/example/yolo-fastestv2.cpp"
+},
+{
+  "directory": "/root/code/gst-fastestdet/example/build",
+  "command": "/usr/bin/clang++ -I../fmt/include -I../CLI11/include -I../include -I/usr/local/include/ncnn -isystem /usr/include/opencv4  -fopenmp=libomp -g -std=gnu++17 -o CMakeFiles/yolo-fastestv2.dir/matrix.pb.cc.o -c /root/code/gst-fastestdet/example/matrix.pb.cc",
+  "file": "/root/code/gst-fastestdet/example/matrix.pb.cc"
+},
+{
+  "directory": "/root/code/gst-fastestdet/example/build",
+  "command": "/usr/bin/clang++ -I../fmt/include -I../CLI11/include -I../include -I/usr/local/include/ncnn -isystem /usr/include/opencv4  -fopenmp=libomp -g -std=gnu++17 -o CMakeFiles/yolo-fastestv2.dir/main.cpp.o -c /root/code/gst-fastestdet/example/main.cpp",
+  "file": "/root/code/gst-fastestdet/example/main.cpp"
+},
+{
+  "directory": "/root/code/gst-fastestdet/example/build",
+  "command": "/usr/bin/clang++ -I../fmt/include  -fopenmp=libomp -g -std=gnu++17 -o fmt/CMakeFiles/fmt.dir/src/format.cc.o -c /root/code/gst-fastestdet/example/fmt/src/format.cc",
+  "file": "/root/code/gst-fastestdet/example/fmt/src/format.cc"
+},
+{
+  "directory": "/root/code/gst-fastestdet/example/build",
+  "command": "/usr/bin/clang++ -I../fmt/include  -fopenmp=libomp -g -std=gnu++17 -o fmt/CMakeFiles/fmt.dir/src/os.cc.o -c /root/code/gst-fastestdet/example/fmt/src/os.cc",
+  "file": "/root/code/gst-fastestdet/example/fmt/src/os.cc"
+}
+]

@@ -61,6 +61,7 @@ impl ImageModel for FastestDet {
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L152
         for h in 0..out_h {
             for w in 0..out_w {
+                let output = output.as_slice::<f32>();
                 let obj_score_idx = (0 * out_h * out_w) + (h * out_w) + w;
                 let obj_score = output[obj_score_idx as usize];
                 let mut max_score: f32 = 0.0;

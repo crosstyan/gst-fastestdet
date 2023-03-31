@@ -49,7 +49,7 @@ impl ImageModel for YoloFastest {
         let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
         let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
         let img_size = (img.width() as i32, img.height() as i32);
-        dbg!(img.as_flat_samples().layout);
+        // dbg!(img.as_flat_samples().layout);
         let img_data = img.as_flat_samples().samples;
         // NOTE: not sure whether it is correct
         // https://blog.csdn.net/qianqing13579/article/details/45318279
@@ -74,16 +74,6 @@ impl ImageModel for YoloFastest {
         // magic string
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L142
         ex.input("input.1", input)?;
-        let s = (self.model_size.0 * self.model_size.1 * 3) as usize;
-        let mut v = Vec::<f32>::with_capacity(s);
-        for it in 0..s {
-            v.push(input[it]);
-        }
-        let acc = v.iter()
-        .fold((0, 0f32),|(cnt, cum), val| (cnt+1, cum+val));
-        let average = acc.1 / acc.0 as f32;
-        println!("first {} el: {}", s, average);
-        // dbg!(&input[..10]);
         let mut outputs: [Mat; 2] = [Mat::new(), Mat::new()];
         ex.extract("794", &mut outputs[0])?;
         ex.extract("796", &mut outputs[1])?;
@@ -100,7 +90,7 @@ impl ImageModel for YoloFastest {
             let stride = input_height / out_h;
             // dbg!(out_h, out_w, out_c, stride, scale_w, scale_h);
             for h in 0..out_h {
-                let mut values = unsafe { output.channel_data(h) };
+                let mut values = output.channel_data(h);
                 for w in 0..out_w {
                     for b in 0..NUM_ANCHOR {
                         let b = b;
@@ -127,10 +117,7 @@ impl ImageModel for YoloFastest {
                             target_boxes.push(target);
                         }
                     }
-                    unsafe {
-                        let p = (values.as_ptr().offset(out_c as isize)) as *mut f32;
-                        values = std::slice::from_raw_parts_mut(p, std::usize::MAX);
-                    };
+                    values = &values[out_c as usize..];
                 }
             }
         }

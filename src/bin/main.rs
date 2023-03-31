@@ -6,6 +6,9 @@ use gstfastestdet::fastestdet::yolo_fastest::YoloFastest;
 use image::buffer::ConvertBuffer;
 use image::{RgbImage, Rgb32FImage};
 use serde_derive::{Deserialize};
+use protobuf::Message;
+use crate::matrix::matrix::Mat;
+mod matrix;
 
 #[derive(Parser, Debug)]
 #[command(author, about, long_about = None)]
@@ -43,6 +46,24 @@ fn mat_to_rgbimg(mat:&ncnn_rs::Mat) -> anyhow::Result<Rgb32FImage>{
   }.to_vec();
   let mut img = image::Rgb32FImage::from_raw(w as u32, h as u32, data).ok_or(anyhow!("not rgb"))?;
   Ok(img)
+}
+
+fn pb_mat_to_ncnn(mat:&Mat)-> anyhow::Result<ncnn_rs::Mat>{
+  let (w, h) = (mat.width, mat.height);
+  println!("w: {}, h: {}", w, h);
+  let v = mat.data.iter().map(|x| x.to_ne_bytes()).flatten().collect::<Vec<u8>>();
+  const NUM_CHN:i32 = 3;
+  // why 4? size_of<u8>() = 4
+  const UNIT_SZ:usize = std::mem::size_of::<f32>();
+  let dummy = vec![0; (w * h * NUM_CHN) as usize];
+  println!("v: {}, dummy: {}", v.len(), dummy.len());
+  let m = ncnn_rs::Mat::from_pixels(&dummy, ncnn_rs::MatPixelType::BGR, w, h, None)?;
+  unsafe {
+    let p = m.data() as *mut u8;
+    let s = std::slice::from_raw_parts_mut(p, (w * h * NUM_CHN) as usize * UNIT_SZ);
+    s.copy_from_slice(&v);
+  }
+  Ok(m)
 }
 
 fn img_resize(img: &RgbImage, size: (i32, i32)) -> anyhow::Result<Rgb32FImage> {
@@ -87,14 +108,21 @@ pub fn main() -> Result<(), anyhow::Error>{
     classes
   )?;
   let rgb_img = img.as_mut_rgb8().ok_or(anyhow::anyhow!("not rgb8"))?;
-  // let mat = det.preprocess(rgb_img)?;
   // let resized = mat_to_rgbimg(&mat)?;
-  let resized:RgbImage = img_resize(rgb_img, (352, 352))?.convert();
-  resized.save(args.output)?;
-  // let targets = det.detect(&mat, (w, h), 0.65).unwrap();
-  // let nms_targets = nms_handle(&targets, args.nms_threshold);
-  // dbg!(&nms_targets);
-  // paint_targets(rgb_img, &nms_targets, det.labels())?;
-  // rgb_img.save(args.output)?;
+  // let resized:RgbImage = img_resize(rgb_img, (352, 352))?.convert();
+  // resized.save(args.output)?;
+  let temp_mat = std::fs::read("chn0.bin")?;
+  let pb_mat = matrix::matrix::Mat::parse_from_bytes(&temp_mat)?;
+  let mat = pb_mat_to_ncnn(&pb_mat)?;
+  let targets = det.detect(&mat, (w, h), 0.8)?;
+  let nms_targets = nms_handle(&targets, args.nms_threshold);
+  println!("matrix nms_targets: {}", nms_targets.len());
+
+  let img_mat = det.preprocess(rgb_img)?;
+  let targets = det.detect(&img_mat, (w, h), 0.8)?;
+  let nms_targets = nms_handle(&targets, args.nms_threshold);
+  println!("nms_targets: {}", nms_targets.len());
+  paint_targets(rgb_img, &nms_targets, det.labels())?;
+  rgb_img.save(args.output)?;
   Ok(())
 }

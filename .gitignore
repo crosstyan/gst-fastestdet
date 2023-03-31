@@ -1,3 +1,5 @@
 target
 out.jpg
 */build/
+*.bin
+*.png
