@@ -1,6 +1,9 @@
 #include <math.h>
 #include <algorithm>
+#include <numeric>
+#include <opencv2/imgproc.hpp>
 #include "yolo-fastestv2.h"
+#include "fmt/core.h"
 
 //模型的参数配置
 yoloFastestv2::yoloFastestv2()
@@ -115,6 +118,7 @@ int yoloFastestv2::getCategory(const float *values, int index, int &category, fl
     float tmp = 0;
     float objScore  = values[4 * numAnchor + index];
 
+    fmt::println("numCategory:{}", numCategory);
     for (int i = 0; i < numCategory; i++) {
         float clsScore = values[4 * numAnchor + numAnchor + i];
         clsScore *= objScore;
@@ -144,10 +148,10 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out, std::vector<TargetBox> &dstB
 
         assert(inputHeight / outH == inputWidth / outW);
         stride = inputHeight / outH;
+        fmt::println("outH:{}, outW:{}, outC:{}\n stride:{}, scaleW:{}, scaleH:{}",outH, outW, outC,stride, scaleW, scaleH);
 
         for (int h = 0; h < outH; h++) {
-            const float* values = out[i].channel(h);
-
+            const float* values = static_cast<float*>(out[i].channel(h).data);
             for (int w = 0; w < outW; w++) {
                 for (int b = 0; b < numAnchor; b++) {                    
                     //float objScore = values[4 * numAnchor + b];
@@ -182,16 +186,21 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out, std::vector<TargetBox> &dstB
     return 0;
 }
 
-int yoloFastestv2::detection(const cv::Mat srcImg, std::vector<TargetBox> &dstBoxes, const float thresh)
+/// return the input mat for debugging
+ncnn::Mat yoloFastestv2::detection(const cv::Mat srcImg, std::vector<TargetBox> &dstBoxes, const float thresh)
 {   
     dstBoxes.clear();
 
     float scaleW = (float)srcImg.cols / (float)inputWidth;
     float scaleH = (float)srcImg.rows / (float)inputHeight;
-    
+    auto stride = srcImg.step1();
+    fmt::println("stride:{}", stride);
+    auto rgbImg = cv::Mat();
+    cv::cvtColor(srcImg, rgbImg, cv::COLOR_BGR2RGB);
     //resize of input image data
-    ncnn::Mat inputImg = ncnn::Mat::from_pixels_resize(srcImg.data, ncnn::Mat::PIXEL_BGR,\
-                                                       srcImg.cols, srcImg.rows, inputWidth, inputHeight); 
+    fmt::println("Color Code {}", ncnn::Mat::PIXEL_RGB2BGR);
+    ncnn::Mat inputImg = ncnn::Mat::from_pixels_resize(rgbImg.data, ncnn::Mat::PIXEL_RGB2BGR,\
+                                                       srcImg.cols, srcImg.rows, stride, inputWidth, inputHeight); 
 
     //Normalization of input image data
     const float mean_vals[3] = {0.f, 0.f, 0.f};
@@ -201,9 +210,17 @@ int yoloFastestv2::detection(const cv::Mat srcImg, std::vector<TargetBox> &dstBo
     //creat extractor
     ncnn::Extractor ex = net.create_extractor();
     ex.set_num_threads(numThreads);
-
     //set input tensor
     ex.input(inputName, inputImg);
+    auto s = inputWidth * inputHeight * 3;
+    const auto p = static_cast<float*>(inputImg.data);
+    auto v = std::vector<float>();
+    for (auto it=p;it!=p+s;it++){
+        v.emplace_back(*p);
+    }
+    auto count = static_cast<float>(v.size());
+    auto average = std::reduce(v.begin(), v.end()) / count;
+    fmt::println("first {} el: {}", v.size(), average);
 
     //forward
     ncnn::Mat out[2]; 
@@ -217,5 +234,5 @@ int yoloFastestv2::detection(const cv::Mat srcImg, std::vector<TargetBox> &dstBo
     //NMS
     nmsHandle(tmpBoxes, dstBoxes);
     
-    return 0;
+    return inputImg;
 }

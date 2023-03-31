@@ -52,7 +52,7 @@ public:
     ~yoloFastestv2();
 
     int loadModel(const char* paramPath, const char* binPath);
-    int detection(const cv::Mat srcImg, std::vector<TargetBox> &dstBoxes, 
+    ncnn::Mat detection(const cv::Mat srcImg, std::vector<TargetBox> &dstBoxes, 
                   const float thresh = 0.3);
 };
 #endif

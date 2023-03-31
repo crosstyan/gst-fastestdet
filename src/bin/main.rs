@@ -1,7 +1,10 @@
+use anyhow::anyhow;
 use clap::{Parser};
 use gstfastestdet::fastestdet::common::{nms_handle, paint_targets, ImageModel};
 use gstfastestdet::fastestdet::fastest_det::FastestDet;
 use gstfastestdet::fastestdet::yolo_fastest::YoloFastest;
+use image::buffer::ConvertBuffer;
+use image::{RgbImage, Rgb32FImage};
 use serde_derive::{Deserialize};
 
 #[derive(Parser, Debug)]
@@ -32,6 +35,39 @@ struct Classes {
     pub classes: Vec<String>,
 }
 
+fn mat_to_rgbimg(mat:&ncnn_rs::Mat) -> anyhow::Result<Rgb32FImage>{
+  let (w, h) = (mat.w(), mat.h());
+  let data = unsafe {
+    let p = mat.data() as *mut f32;
+    std::slice::from_raw_parts_mut(p, (w * h * 3) as usize)
+  }.to_vec();
+  let mut img = image::Rgb32FImage::from_raw(w as u32, h as u32, data).ok_or(anyhow!("not rgb"))?;
+  Ok(img)
+}
+
+fn img_resize(img: &RgbImage, size: (i32, i32)) -> anyhow::Result<Rgb32FImage> {
+    use ncnn_rs::Mat;
+    let img_data = img.as_flat_samples().samples;
+    let img_size = (img.width() as i32, img.height() as i32);
+    let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
+    dbg!(height_stride);
+    use ncnn_rs::MatPixelType;
+    let stride = height_stride;
+    let mut input = Mat::from_pixels_resize(
+        img_data,
+        MatPixelType::RGB.convert(&MatPixelType::BGR),
+        img_size,
+        stride as i32,
+        size,
+        None,
+    )?;
+
+  let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
+  let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
+  input.substract_mean_normalize(&mean_vals, &norm_vals);
+  let resized = mat_to_rgbimg(&input)?;
+  Ok(resized)
+}
 
 pub fn main() -> Result<(), anyhow::Error>{
   let args = Args::parse();
@@ -51,11 +87,14 @@ pub fn main() -> Result<(), anyhow::Error>{
     classes
   )?;
   let rgb_img = img.as_mut_rgb8().ok_or(anyhow::anyhow!("not rgb8"))?;
-  let mat = det.preprocess(rgb_img)?;
-  let targets = det.detect(&mat, (w, h), 0.65).unwrap();
-  let nms_targets = nms_handle(&targets, args.nms_threshold);
-  dbg!(&nms_targets);
-  paint_targets(rgb_img, &nms_targets, det.labels())?;
-  rgb_img.save(args.output)?;
+  // let mat = det.preprocess(rgb_img)?;
+  // let resized = mat_to_rgbimg(&mat)?;
+  let resized:RgbImage = img_resize(rgb_img, (352, 352))?.convert();
+  resized.save(args.output)?;
+  // let targets = det.detect(&mat, (w, h), 0.65).unwrap();
+  // let nms_targets = nms_handle(&targets, args.nms_threshold);
+  // dbg!(&nms_targets);
+  // paint_targets(rgb_img, &nms_targets, det.labels())?;
+  // rgb_img.save(args.output)?;
   Ok(())
 }

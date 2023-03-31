@@ -3,18 +3,17 @@
 use super::common::{ImageModel, RgbBuffer, TargetBox};
 
 use anyhow::{bail, Result};
-use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net, MatView};
+use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net};
 use std::ops::{Deref};
 
-const num_anchor: usize = 3;
-const anchor: [f32; 12] = [
+const NUM_ANCHOR: usize = 3;
+const ANCHOR: [f32; 12] = [
     12.64, 19.39, 37.88, 51.48, 55.71, 138.31, 126.91, 78.23, 131.57, 214.55, 279.92, 258.87,
 ];
 pub struct YoloFastest {
     alloc: NcnnAllocator,
     net: Net,
     classes: Vec<String>,
-    /// 模型输入宽高
     model_size: (i32, i32),
 }
 
@@ -28,12 +27,12 @@ fn category_score<T>(values: &[f32], index: usize, category: &[T]) -> (String, u
 where
     T: AsRef<str>,
 {
-    let n_anchor = num_anchor;
+    let num_anchor = NUM_ANCHOR;
     let num_category = category.len();
-    let obj_score = values[4 * n_anchor + index as usize];
+    let obj_score = values[4 * num_anchor + index as usize];
     let (idx, score) = (0..num_category)
         .map(|i| {
-            let score = values[4 * n_anchor + n_anchor + i];
+            let score = values[4 * num_anchor + num_anchor + i];
             let class_score = obj_score * score;
             (i, class_score)
         })
@@ -50,19 +49,22 @@ impl ImageModel for YoloFastest {
         let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
         let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
         let img_size = (img.width() as i32, img.height() as i32);
+        dbg!(img.as_flat_samples().layout);
         let img_data = img.as_flat_samples().samples;
         // NOTE: not sure whether it is correct
         // https://blog.csdn.net/qianqing13579/article/details/45318279
         let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
+        dbg!(height_stride);
+        use ncnn_rs::MatPixelType;
         let stride = height_stride;
         let mut input = Mat::from_pixels_resize(
             img_data,
-            ncnn_bind::NCNN_MAT_PIXEL_RGB as i32,
+            MatPixelType::RGB.convert(&MatPixelType::BGR),
             img_size,
             stride as i32,
             self.model_size,
-            &self.alloc,
-        );
+            Some(&self.alloc),
+        )?;
         input.substract_mean_normalize(&mean_vals, &norm_vals);
         Ok(input)
     }
@@ -71,24 +73,20 @@ impl ImageModel for YoloFastest {
         let mut ex = self.net.create_extractor();
         // magic string
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L142
-        if let Err(e) = ex.input("input.1", input) {
-            bail!("ex.input error: {}", e);
-        };
+        ex.input("input.1", input)?;
+        let s = (self.model_size.0 * self.model_size.1 * 3) as usize;
+        let mut v = Vec::<f32>::with_capacity(s);
+        for it in 0..s {
+            v.push(input[it]);
+        }
+        let acc = v.iter()
+        .fold((0, 0f32),|(cnt, cum), val| (cnt+1, cum+val));
+        let average = acc.1 / acc.0 as f32;
+        println!("first {} el: {}", s, average);
+        // dbg!(&input[..10]);
         let mut outputs: [Mat; 2] = [Mat::new(), Mat::new()];
-        // magic name
-        if let Err(e) = ex.extract("794", &mut outputs[0]) {
-            bail!("ex.extract error: {}", e);
-        };
-        // NOTE: I'm not sure why the author choose create two
-        // extractor instead of borrow the first one.
-        // Should investigate it later
-        let mut ex = self.net.create_extractor();
-        if let Err(e) = ex.input("input.1", input) {
-            bail!("ex.input error: {}", e);
-        };
-        if let Err(e) = ex.extract("796", &mut outputs[1]) {
-            bail!("ex.extract error: {}", e);
-        };
+        ex.extract("794", &mut outputs[0])?;
+        ex.extract("796", &mut outputs[1])?;
         let mut target_boxes: Vec<TargetBox> = Vec::new();
         let (input_height, input_width) = self.model_size;
         let (img_w, img_h) = img_size;
@@ -100,24 +98,24 @@ impl ImageModel for YoloFastest {
             let out_c = output.w();
             assert!(input_height / out_h == input_width / out_w);
             let stride = input_height / out_h;
-            // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L152
+            // dbg!(out_h, out_w, out_c, stride, scale_w, scale_h);
             for h in 0..out_h {
-                let mut values = unsafe { output.channel_slice(h) };
+                let mut values = unsafe { output.channel_data(h) };
                 for w in 0..out_w {
-                    for b in 0..num_anchor {
+                    for b in 0..NUM_ANCHOR {
                         let b = b;
                         let (_, idx, score) = category_score(&values, b, &self.classes);
                         if score > thresh {
                             let bcx = (values[b * 4 + 0] * 2.0 - 0.5 + w as f32) * stride as f32;
                             let bcy = (values[b * 4 + 1] * 2.0 - 0.5 + h as f32) * stride as f32;
                             let bw = values[b * 4 + 2].powi(2)
-                                * anchor[(i * num_anchor * 2) + b as usize * 2 + 0];
+                                * ANCHOR[(i * NUM_ANCHOR * 2) + b as usize * 2 + 0];
                             let bh = values[b * 4 + 3].powi(2)
-                                * anchor[(i * num_anchor * 2) + b as usize * 2 + 1];
-                            let x1 = ((bcx - bw / 2.0) / scale_w as f32) as i32;
-                            let x2 = ((bcx + bw / 2.0) / scale_w as f32) as i32;
-                            let y1 = ((bcy - bh / 2.0) / scale_h as f32) as i32;
-                            let y2 = ((bcy + bh / 2.0) / scale_h as f32) as i32;
+                                * ANCHOR[(i * NUM_ANCHOR * 2) + b as usize * 2 + 1];
+                            let x1 = ((bcx - bw / 2.0) * scale_w) as i32;
+                            let x2 = ((bcx + bw / 2.0) * scale_w) as i32;
+                            let y1 = ((bcy - bh / 2.0) * scale_h) as i32;
+                            let y2 = ((bcy + bh / 2.0) * scale_h) as i32;
                             let target = TargetBox {
                                 x1,
                                 y1,

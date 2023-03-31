@@ -26,36 +26,17 @@ impl ImageModel for FastestDet {
         let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
         let img_size = (img.width() as i32, img.height() as i32);
         let img_data = img.as_flat_samples().samples;
-        // NOTE: not sure whether it is correct
-        // https://blog.csdn.net/qianqing13579/article/details/45318279
         let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
-        // Add this to an index to get to the sample in the next channel.
-        // what...?
-        // dbg!(chn_stride, width_stride, height_stride);
-        // dbg!(img.width(), img.height());
-        // assert!(chn_stride == 3);
         let stride = height_stride;
-        // stride = cols * channels = 500 * 3 = 1500
-        // https://github.com/Tencent/ncnn/blob/5eb56b2ea5a99fb5a3d6f3669ef1743b73a9a53e/src/mat.h#L261
-        // https://learn.microsoft.com/en-us/windows/win32/medfound/image-stride
-        // https://stackoverflow.com/questions/11572156/stride-on-image-using-opencv-c
-        // In fact, if isContinuous() returns true it means that stride == cols, so
-        // the "stride" becomes the same of the image width. What is zero in that
-        // case is, maybe, the padding.
-        // convenient construct from pixel data with stride(bytes-per-row) parameter
-        // https://docs.opencv.org/2.4/modules/core/doc/basic_structures.html#mat-mat
-        // step – Number of bytes each matrix row occupies. The value should include
-        // the padding bytes at the end of each row, if any. If the parameter is
-        // missing (set to AUTO_STEP ), no padding is assumed and the actual step is
-        // calculated as cols*elemSize() .
+        use ncnn_rs::MatPixelType;
         let mut input = Mat::from_pixels_resize(
             img_data,
-            ncnn_bind::NCNN_MAT_PIXEL_RGB as i32,
+            MatPixelType::RGB.to_int(),
             img_size,
             stride as i32,
             self.model_size,
-            &self.alloc,
-        );
+            Some(&self.alloc),
+        )?;
         input.substract_mean_normalize(&mean_vals, &norm_vals);
         Ok(input)
     }
@@ -81,7 +62,7 @@ impl ImageModel for FastestDet {
         for h in 0..out_h {
             for w in 0..out_w {
                 let obj_score_idx = (0 * out_h * out_w) + (h * out_w) + w;
-                let obj_score = output.index(obj_score_idx as isize);
+                let obj_score = output[obj_score_idx as usize];
                 let mut max_score: f32 = 0.0;
                 let mut class_index = 0;
                 for idx in 0..class_num {
@@ -89,7 +70,7 @@ impl ImageModel for FastestDet {
                     // why 5? magic number?
                     // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L165
                     let score_idx = ((idx + 5) * out_h * out_w) + (h * out_w) + w;
-                    let score = output.index(score_idx as isize).clone();
+                    let score = output[score_idx as usize].clone();
                     if score > max_score {
                         max_score = score;
                         class_index = idx;
@@ -102,10 +83,10 @@ impl ImageModel for FastestDet {
                     let box_width_index = (3 * out_h * out_w) + (h * out_w) + w;
                     let box_height_index = (4 * out_h * out_w) + (h * out_w) + w;
 
-                    let x_offset = output.index(x_offset_index as isize).tanh();
-                    let y_offset = output.index(y_offset_index as isize).tanh();
-                    let box_width = output.index(box_width_index as isize).sigmoid();
-                    let box_height = output.index(box_height_index as isize).sigmoid();
+                    let x_offset = output.index(x_offset_index as usize).tanh();
+                    let y_offset = output.index(y_offset_index as usize).tanh();
+                    let box_width = output.index(box_width_index as usize).sigmoid();
+                    let box_height = output.index(box_height_index as usize).sigmoid();
 
                     let cx = (w as f32 + x_offset) / out_w as f32;
                     let cy = (h as f32 + y_offset) / out_h as f32;
