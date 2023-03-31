@@ -8,7 +8,7 @@ use gst::{debug, info, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
 use once_cell::sync::Lazy;
-use serde_derive::{Deserialize};
+use serde_derive::Deserialize;
 use std::i32;
 use std::ops::Not;
 use std::ops::{Deref, DerefMut};
@@ -94,9 +94,7 @@ impl GstFastestDet {
         is_paint: bool,
     ) -> Result<(), anyhow::Error> {
         let text_src = self.text_pad.as_ref();
-        let input = det.preprocess(&mat)?;
-        let (w, h) = (mat.width() as i32, mat.height() as i32);
-        let targets = det.inference(&input, (w, h), 0.65)?;
+        let targets = det.detect(&mat, 0.65)?;
         let nms_targets = nms_handle(&targets, 0.45);
         if let Some(pad) = text_src {
             let serialized = serde_json::to_string(&nms_targets)?;
