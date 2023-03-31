@@ -86,13 +86,8 @@ impl ImageModel for YoloFastest {
             let out_c = output.w();
             assert!(input_height / out_h == input_width / out_w);
             let stride = input_height / out_h;
-            use statrs::statistics::Statistics;
             for h in 0..out_h {
                 let mut values: &[f32] = output.channel_data(h);
-                if h == 0 {
-                    let values = values.iter().map(|x| *x as f64).collect::<Vec<_>>();
-                    dbg!(values.len(), &values.clone().mean(), &values.variance());
-                }
                 for w in 0..out_w {
                     for b in 0..NUM_ANCHOR {
                         let (_, idx, score) = category_score(&values, b, &self.classes);
