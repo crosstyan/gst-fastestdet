@@ -147,7 +147,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
       auto output = out[i];
       auto begin = static_cast<float *>(output.channel(h).data);
       auto end = begin + output.channel(h).total();
-      auto values = begin;
+      auto values = std::vector(begin, end);
       if (h == 0) {
         fmt::println("total:{}", output.channel(h).total());
       }
@@ -158,7 +158,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
           int category = -1;
           float score = -1;
 
-          getCategory(values, b, category, score);
+          getCategory(values.data(), b, category, score);
 
           if (score > thresh) {
             float bcx, bcy, bw, bh;
@@ -180,7 +180,8 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
             dstBoxes.push_back(tmpBox);
           }
         }
-        values = values + outC;
+        auto new_begin = begin + outC;
+        values.assign(new_begin, end);
       }
     }
   }
