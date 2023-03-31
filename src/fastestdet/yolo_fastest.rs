@@ -27,19 +27,17 @@ fn category_score<T>(values: &[f32], index: usize, category: &[T]) -> (String, u
 where
     T: AsRef<str>,
 {
-    let num_anchor = NUM_ANCHOR;
     let num_category = category.len();
-    let obj_score = values[4 * num_anchor + index as usize];
+    let obj_score = values[4 * NUM_ANCHOR + index];
     let (idx, score) = (0..num_category)
         .map(|i| {
-            let score = values[4 * num_anchor + num_anchor + i];
+            let score = values[4 * NUM_ANCHOR + NUM_ANCHOR + i];
             let class_score = obj_score * score;
             (i, class_score)
         })
         .filter(|(_, score)| (*score).is_nan().not())
         .max_by(|(_, score1), (_, score2)| score1.partial_cmp(score2).unwrap())
         .unwrap();
-    let idx = idx as usize;
     (category[idx].as_ref().to_string(), idx, score)
 }
 
@@ -55,7 +53,6 @@ impl ImageModel for YoloFastest {
         // NOTE: not sure whether it is correct
         // https://blog.csdn.net/qianqing13579/article/details/45318279
         let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
-        dbg!(height_stride);
         use ncnn_rs::MatPixelType;
         let stride = height_stride;
         let mut input = Mat::from_pixels_resize(
@@ -89,12 +86,15 @@ impl ImageModel for YoloFastest {
             let out_c = output.w();
             assert!(input_height / out_h == input_width / out_w);
             let stride = input_height / out_h;
-            // dbg!(out_h, out_w, out_c, stride, scale_w, scale_h);
+            use statrs::statistics::Statistics;
             for h in 0..out_h {
-                let mut values = output.channel_data(h);
+                let mut values:&[f32] = output.channel_data(h);
+                if h == 0 {
+                    let values = values.iter().map(|x| *x as f64).collect::<Vec<_>>();
+                    dbg!(values.len(), &values.clone().mean(), &values.variance());
+                }
                 for w in 0..out_w {
                     for b in 0..NUM_ANCHOR {
-                        let b = b;
                         let (_, idx, score) = category_score(&values, b, &self.classes);
                         if score > thresh {
                             let bcx = (values[b * 4 + 0] * 2.0 - 0.5 + w as f32) * stride as f32;

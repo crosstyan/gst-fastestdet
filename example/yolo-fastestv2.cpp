@@ -110,7 +110,6 @@ int yoloFastestv2::getCategory(const float *values, int index, int &category,
   float tmp = 0;
   float objScore = values[4 * numAnchor + index];
 
-  fmt::println("numCategory:{}", numCategory);
   for (int i = 0; i < numCategory; i++) {
     float clsScore = values[4 * numAnchor + numAnchor + i];
     clsScore *= objScore;
@@ -145,7 +144,13 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
                  outH, outW, outC, stride, scaleW, scaleH);
 
     for (int h = 0; h < outH; h++) {
-      const float *values = static_cast<float *>(out[i].channel(h).data);
+      auto values = std::vector<float>();
+      auto begin = static_cast<float*>(out->channel(h).data);
+      auto end = begin + out->channel(h).total();
+      values.assign(begin, end);
+      if (h==0){
+        fmt::println("total:{}", out->channel(h).total());
+      }
       for (int w = 0; w < outW; w++) {
         for (int b = 0; b < numAnchor; b++) {
           // float objScore = values[4 * numAnchor + b];
@@ -153,7 +158,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
           int category = -1;
           float score = -1;
 
-          getCategory(values, b, category, score);
+          getCategory(values.data(), b, category, score);
 
           if (score > thresh) {
             float bcx, bcy, bw, bh;
@@ -175,7 +180,8 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
             dstBoxes.push_back(tmpBox);
           }
         }
-        values += outC;
+        auto new_begin = begin + outC;
+        values.assign(new_begin, end);
       }
     }
   }
@@ -209,7 +215,7 @@ ncnn::Mat yoloFastestv2::detection(const cv::Mat srcImg,
   ncnn::Extractor ex = net.create_extractor();
   ex.set_num_threads(numThreads);
   // set input tensor
-  ex.input(inputName, inputImg);
+  ex.input(inputName.data(), inputImg);
   auto s = inputWidth * inputHeight * 3;
   const auto p = static_cast<float *>(inputImg.data);
   auto v = std::vector<float>();
@@ -222,8 +228,8 @@ ncnn::Mat yoloFastestv2::detection(const cv::Mat srcImg,
 
   // forward
   ncnn::Mat out[2];
-  ex.extract(outputName1, out[0]); // 22x22
-  ex.extract(outputName2, out[1]); // 11x11
+  ex.extract(outputName1.data(), out[0]); // 22x22
+  ex.extract(outputName2.data(), out[1]); // 11x11
 
   std::vector<TargetBox> tmpBoxes;
   //特征图后处理

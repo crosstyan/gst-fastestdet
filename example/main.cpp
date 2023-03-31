@@ -91,44 +91,46 @@ int main() {
   api.loadModel(param_path.c_str(), bin_path.c_str());
 
   cv::Mat cvImg = cv::imread(input_path);
-  resize(cvImg);
+  // resize(cvImg);
 
-  // std::vector<TargetBox> boxes;
-  // api.detection(cvImg, boxes);
+  std::vector<TargetBox> boxes;
+  api.detection(cvImg, boxes);
 
-  // for (int i = 0; i < boxes.size(); i++) {
-  //     std::cout<<boxes[i].x1<<" "<<boxes[i].y1<<" "<<boxes[i].x2<<"
-  //     "<<boxes[i].y2
-  //              <<" "<<boxes[i].score<<" "<<boxes[i].cate<<std::endl;
+  for (int i = 0; i < boxes.size(); i++) {
+    std::cout << boxes[i].x1 << " " << boxes[i].y1 << " " << boxes[i].x2 << " "
+              << boxes[i].y2 << " " << boxes[i].score << " " << boxes[i].cate
+              << std::endl;
 
-  //     char text[256];
-  //     sprintf(text, "%s %.1f%%", class_names[boxes[i].cate], boxes[i].score *
-  //     100);
+    char text[256];
+    sprintf(text, "%s %.1f%%", class_names[boxes[i].cate],
+            boxes[i].score * 100);
 
-  //     int baseLine = 0;
-  //     cv::Size label_size = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX,
-  //     0.5, 1, &baseLine);
+    int baseLine = 0;
+    cv::Size label_size =
+        cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseLine);
 
-  //     int x = boxes[i].x1;
-  //     int y = boxes[i].y1 - label_size.height - baseLine;
-  //     if (y < 0)
-  //         y = 0;
-  //     if (x + label_size.width > cvImg.cols)
-  //         x = cvImg.cols - label_size.width;
+    int x = boxes[i].x1;
+    int y = boxes[i].y1 - label_size.height - baseLine;
+    if (y < 0)
+      y = 0;
+    if (x + label_size.width > cvImg.cols)
+      x = cvImg.cols - label_size.width;
 
-  //     cv::rectangle(cvImg, cv::Rect(cv::Point(x, y),
-  //     cv::Size(label_size.width, label_size.height + baseLine)),
-  //                   cv::Scalar(255, 255, 255), -1);
+    cv::rectangle(
+        cvImg,
+        cv::Rect(cv::Point(x, y),
+                 cv::Size(label_size.width, label_size.height + baseLine)),
+        cv::Scalar(255, 255, 255), -1);
 
-  //     cv::putText(cvImg, text, cv::Point(x, y + label_size.height),
-  //                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+    cv::putText(cvImg, text, cv::Point(x, y + label_size.height),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
 
-  //     cv::rectangle (cvImg, cv::Point(boxes[i].x1, boxes[i].y1),
-  //                    cv::Point(boxes[i].x2, boxes[i].y2), cv::Scalar(255,
-  //                    255, 0), 2, 2, 0);
-  // }
+    cv::rectangle(cvImg, cv::Point(boxes[i].x1, boxes[i].y1),
+                  cv::Point(boxes[i].x2, boxes[i].y2), cv::Scalar(255, 255, 0),
+                  2, 2, 0);
+  }
 
-  // cv::imwrite(output_path, cvImg);
+  cv::imwrite(output_path, cvImg);
 
   return 0;
 }
