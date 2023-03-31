@@ -4,7 +4,7 @@ use super::common::{ImageModel, RgbBuffer, TargetBox};
 
 use anyhow::{bail, Result};
 use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net};
-use std::ops::{Deref};
+use std::ops::{Deref, Not};
 
 const NUM_ANCHOR: usize = 3;
 const ANCHOR: [f32; 12] = [
@@ -36,6 +36,7 @@ where
             let class_score = obj_score * score;
             (i, class_score)
         })
+        .filter(|(_, score)| (*score).is_nan().not())
         .max_by(|(_, score1), (_, score2)| score1.partial_cmp(score2).unwrap())
         .unwrap();
     let idx = idx as usize;

@@ -18,7 +18,7 @@ void resize(const cv::Mat &mat) {
   // so the type of ncnn input would be float (32FC3)?
   const float mean_vals[3] = {0.f, 0.f, 0.f};
   const float norm_vals[3] = {1 / 255.f, 1 / 255.f, 1 / 255.f};
-  // input.substract_mean_normalize(mean_vals, norm_vals);
+  input.substract_mean_normalize(mean_vals, norm_vals);
   fmt::println("input.w:{}, h:{}, c:{}, cstep:{}, elsize:{}", input.w, input.h,
                input.c, input.cstep, input.elemsize);
   auto chn = input.channel(0);
@@ -26,12 +26,13 @@ void resize(const cv::Mat &mat) {
                chn.h, chn.c, chn.cstep);
   auto out = std::ofstream("chn0.bin", std::ios::binary);
   Mat out_mat;
-  out_mat.set_height(chn.h);
-  out_mat.set_width(chn.w);
+  out_mat.set_height(input.h);
+  out_mat.set_width(input.w);
   for (auto it = static_cast<float *>(input.data);
        it != static_cast<float *>(input.data) + input.total(); ++it) {
     out_mat.add_data(*it);
   }
+  fmt::println("wrote {} bytes", out_mat.data_size());
   out_mat.SerializeToOstream(&out);
   auto cv_mat = cv::Mat(input.h, input.w, CV_32FC3, input.data);
   cv::imwrite("resized.png", cv_mat);

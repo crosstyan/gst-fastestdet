@@ -53,7 +53,6 @@ fn pb_mat_to_ncnn(mat:&Mat)-> anyhow::Result<ncnn_rs::Mat>{
   println!("w: {}, h: {}", w, h);
   let v = mat.data.iter().map(|x| x.to_ne_bytes()).flatten().collect::<Vec<u8>>();
   const NUM_CHN:i32 = 3;
-  // why 4? size_of<u8>() = 4
   const UNIT_SZ:usize = std::mem::size_of::<f32>();
   let dummy = vec![0; (w * h * NUM_CHN) as usize];
   println!("v: {}, dummy: {}", v.len(), dummy.len());
@@ -115,14 +114,14 @@ pub fn main() -> Result<(), anyhow::Error>{
   let pb_mat = matrix::matrix::Mat::parse_from_bytes(&temp_mat)?;
   let mat = pb_mat_to_ncnn(&pb_mat)?;
   let targets = det.detect(&mat, (w, h), 0.8)?;
-  let nms_targets = nms_handle(&targets, args.nms_threshold);
-  println!("matrix nms_targets: {}", nms_targets.len());
+  let m_nms_targets = nms_handle(&targets, args.nms_threshold);
+  println!("matrix nms_targets: {}", m_nms_targets.len());
 
   let img_mat = det.preprocess(rgb_img)?;
   let targets = det.detect(&img_mat, (w, h), 0.8)?;
   let nms_targets = nms_handle(&targets, args.nms_threshold);
   println!("nms_targets: {}", nms_targets.len());
-  paint_targets(rgb_img, &nms_targets, det.labels())?;
+  paint_targets(rgb_img, &m_nms_targets, det.labels())?;
   rgb_img.save(args.output)?;
   Ok(())
 }
