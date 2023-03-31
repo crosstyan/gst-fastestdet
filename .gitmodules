@@ -1,3 +1,9 @@
 [submodule "rust-ncnn"]
 	path = lib/rust-ncnn
 	url = https://github.com/crosstyan/rust-ncnn
+[submodule "example/CLI11"]
+	path = example/CLI11
+	url = https://github.com/CLIUtils/CLI11
+[submodule "example/fmt"]
+	path = example/fmt
+	url = https://github.com/fmtlib/fmt

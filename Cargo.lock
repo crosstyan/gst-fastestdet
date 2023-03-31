@@ -543,6 +543,7 @@ dependencies = [
  "ncnn-rs",
  "num-traits",
  "once_cell",
+ "protobuf",
  "rusttype",
  "serde",
  "serde_derive",
@@ -971,6 +972,7 @@ dependencies = [
  "bindgen",
  "cmake",
  "libc",
+ "openmp-sys",
 ]
 
 [[package]]
@@ -1083,6 +1085,15 @@ name = "once_cell"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e82dad04139b71a90c080c8463fe0dc7902db5192d939bd0950f074d014339e1"
+
+[[package]]
+name = "openmp-sys"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3a0ed77d2794d2b9a59123e60e874190626c22b7124ce38959fe59386e317fa"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "option-operations"
@@ -1224,6 +1235,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bd7356a8122b6c4a24a82b278680c73357984ca2fc79a0f9fa6dea7dced7c58"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "protobuf"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b55bad9126f378a853655831eb7363b7b01b81d19f8cb1218861086ca4a1a61e"
+dependencies = [
+ "once_cell",
+ "protobuf-support",
+ "thiserror",
+]
+
+[[package]]
+name = "protobuf-support"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d4d7b8601c814cfb36bcebb79f0e61e45e1e93640cf778837833bbed05c372"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]
