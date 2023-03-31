@@ -107,6 +107,30 @@ pub fn nms_handle(boxes: &[TargetBox], nms_threshold: f32) -> Vec<TargetBox> {
     picked
 }
 
+pub fn common_preprocess<T: Deref<Target = [u8]> + AsRef<[u8]>>(
+    model_input_size: (i32, i32),
+    img: &RgbBuffer<T>,
+    alloc: Option<&ncnn_rs::Allocator>,
+) -> Result<Mat> {
+    let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
+    let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
+    let img_size = (img.width() as i32, img.height() as i32);
+    let img_data = img.as_flat_samples().samples;
+    let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
+    use ncnn_rs::MatPixelType;
+    let stride = height_stride;
+    let mut input = Mat::from_pixels_resize(
+        img_data,
+        MatPixelType::RGB.convert(&MatPixelType::BGR),
+        img_size,
+        stride as i32,
+        model_input_size,
+        alloc,
+    )?;
+    input.substract_mean_normalize(&mean_vals, &norm_vals);
+    Ok(input)
+}
+
 pub trait ImageModel {
     fn preprocess<T: Deref<Target = [u8]> + AsRef<[u8]>>(&self, img: &RgbBuffer<T>) -> Result<Mat>;
 

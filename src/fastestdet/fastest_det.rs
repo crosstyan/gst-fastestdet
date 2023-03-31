@@ -1,6 +1,6 @@
 // adapted from
 // https://github.com/dog-qiuqiu/FastestDet/blob/main/example/ncnn/FastestDet.cpp
-use super::common::{ImageModel, RgbBuffer, TargetBox};
+use super::common::{ImageModel, RgbBuffer, TargetBox, common_preprocess};
 use super::utils::*;
 use anyhow::{bail, Result};
 use ncnn_rs::{Allocator as NcnnAllocator, Mat, Net};
@@ -19,26 +19,8 @@ unsafe impl Send for FastestDet {}
 unsafe impl Sync for FastestDet {}
 
 impl ImageModel for FastestDet {
-    // https://github.com/Tencent/ncnn/blob/bae2ee375fe025776d18a489a92a7f2357af7312/src/c_api.h#L103
-    /// I assume you will read it from image crate with
     fn preprocess<T: Deref<Target = [u8]> + AsRef<[u8]>>(&self, img: &RgbBuffer<T>) -> Result<Mat> {
-        let mean_vals: Vec<f32> = vec![0.0, 0.0, 0.0];
-        let norm_vals: Vec<f32> = vec![1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0];
-        let img_size = (img.width() as i32, img.height() as i32);
-        let img_data = img.as_flat_samples().samples;
-        let (_, _, height_stride) = img.as_flat_samples().strides_cwh();
-        let stride = height_stride;
-        use ncnn_rs::MatPixelType;
-        let mut input = Mat::from_pixels_resize(
-            img_data,
-            MatPixelType::RGB.to_int(),
-            img_size,
-            stride as i32,
-            self.model_size,
-            Some(&self.alloc),
-        )?;
-        input.substract_mean_normalize(&mean_vals, &norm_vals);
-        Ok(input)
+        common_preprocess(self.model_size, img, Some(&self.alloc))
     }
 
     fn inference(
