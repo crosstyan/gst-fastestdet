@@ -96,7 +96,7 @@ impl GstFastestDet {
         let text_src = self.text_pad.as_ref();
         let input = det.preprocess(&mat)?;
         let (w, h) = (mat.width() as i32, mat.height() as i32);
-        let targets = det.detect(&input, (w, h), 0.65)?;
+        let targets = det.inference(&input, (w, h), 0.65)?;
         let nms_targets = nms_handle(&targets, 0.45);
         if let Some(pad) = text_src {
             let serialized = serde_json::to_string(&nms_targets)?;

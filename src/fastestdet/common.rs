@@ -113,6 +113,11 @@ pub trait ImageModel {
         img: &RgbBuffer<T>,
     ) -> Result<Mat>;
 
-    fn detect(&mut self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>>;
+    fn inference(&mut self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>>;
+    fn detect(&mut self , img: &RgbBuffer<Vec<u8>>, thresh: f32) -> Result<Vec<TargetBox>> {
+        let input = self.preprocess(img)?;
+        let img_size = (img.width() as i32, img.height() as i32);
+        self.inference(&input, img_size, thresh)
+    }
     fn labels(&self) -> &Vec<String>;
 }

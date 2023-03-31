@@ -137,15 +137,13 @@ pub fn main() -> Result<(), anyhow::Error> {
     let targets = match args.backend {
         Backend::YoloFastest => {
             let mut det = YoloFastest::new(args.param_path, args.model_path, classes)?;
-            let img_mat = det.preprocess(rgb_img)?;
-            let targets = det.detect(&img_mat, (w, h), args.threshold)?;
+            let targets = det.detect(&rgb_img, args.threshold)?;
             let nms_targets = nms_handle(&targets, args.nms_threshold);
             nms_targets
         }
         Backend::FastestDet => {
             let mut det = FastestDet::new(args.param_path, args.model_path, (352, 352), classes)?;
-            let img_mat = det.preprocess(rgb_img)?;
-            let targets = det.detect(&img_mat, (w, h), args.threshold)?;
+            let targets = det.detect(&rgb_img, args.threshold)?;
             let nms_targets = nms_handle(&targets, args.nms_threshold);
             nms_targets
         }

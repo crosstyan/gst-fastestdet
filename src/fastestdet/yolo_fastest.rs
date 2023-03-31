@@ -67,7 +67,7 @@ impl ImageModel for YoloFastest {
         Ok(input)
     }
 
-    fn detect(&mut self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>> {
+    fn inference(&mut self, input: &Mat, img_size: (i32, i32), thresh: f32) -> Result<Vec<TargetBox>> {
         let mut ex = self.net.create_extractor();
         // magic string
         // https://github.com/dog-qiuqiu/FastestDet/blob/50473cd155cb088aa4a99e64ff6a4b3c24fa07e1/example/ncnn/FastestDet.cpp#L142
