@@ -128,18 +128,14 @@ impl FastestDet {
     where
         P: AsRef<str>,
     {
-        let mut fastest_det = FastestDet {
+        let mut det = FastestDet {
             alloc: unsafe { NcnnAllocator::new() },
             net: Net::new(),
             classes,
             model_size,
         };
-        if let Err(e) = fastest_det.net.load_param(param_path.as_ref()) {
-            anyhow::bail!("load param failed: {}", e);
-        }
-        if let Err(e) = fastest_det.net.load_model(model_path.as_ref()) {
-            anyhow::bail!("load model failed: {}", e);
-        };
-        Ok(fastest_det)
+        det.net.load_param(param_path.as_ref())?;
+        det.net.load_model(model_path.as_ref())?;
+        Ok(det)
     }
 }
