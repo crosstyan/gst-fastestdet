@@ -91,10 +91,12 @@ int main() {
   api.loadModel(param_path.c_str(), bin_path.c_str());
 
   cv::Mat cvImg = cv::imread(input_path);
-  // resize(cvImg);
-
   std::vector<TargetBox> boxes;
   api.detection(cvImg, boxes);
+
+  if (boxes.size() == 0) {
+    fmt::println("no box detected");
+  }
 
   for (int i = 0; i < boxes.size(); i++) {
     std::cout << boxes[i].x1 << " " << boxes[i].y1 << " " << boxes[i].x2 << " "

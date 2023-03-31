@@ -144,12 +144,12 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
                  outH, outW, outC, stride, scaleW, scaleH);
 
     for (int h = 0; h < outH; h++) {
-      auto values = std::vector<float>();
-      auto begin = static_cast<float*>(out->channel(h).data);
-      auto end = begin + out->channel(h).total();
-      values.assign(begin, end);
-      if (h==0){
-        fmt::println("total:{}", out->channel(h).total());
+      auto output = out[i];
+      auto begin = static_cast<float *>(output.channel(h).data);
+      auto end = begin + output.channel(h).total();
+      auto values = begin;
+      if (h == 0) {
+        fmt::println("total:{}", output.channel(h).total());
       }
       for (int w = 0; w < outW; w++) {
         for (int b = 0; b < numAnchor; b++) {
@@ -158,7 +158,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
           int category = -1;
           float score = -1;
 
-          getCategory(values.data(), b, category, score);
+          getCategory(values, b, category, score);
 
           if (score > thresh) {
             float bcx, bcy, bw, bh;
@@ -180,8 +180,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
             dstBoxes.push_back(tmpBox);
           }
         }
-        auto new_begin = begin + outC;
-        values.assign(new_begin, end);
+        values = values + outC;
       }
     }
   }
@@ -189,7 +188,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
 }
 
 /// return the input mat for debugging
-ncnn::Mat yoloFastestv2::detection(const cv::Mat srcImg,
+int yoloFastestv2::detection(const cv::Mat srcImg,
                                    std::vector<TargetBox> &dstBoxes,
                                    const float thresh) {
   dstBoxes.clear();
@@ -228,8 +227,16 @@ ncnn::Mat yoloFastestv2::detection(const cv::Mat srcImg,
 
   // forward
   ncnn::Mat out[2];
-  ex.extract(outputName1.data(), out[0]); // 22x22
-  ex.extract(outputName2.data(), out[1]); // 11x11
+  auto err = ex.extract(outputName1.data(), out[0]); // 22x22
+  if (err != 0) {
+    fmt::print("extract error:{}");
+    return 1;
+  }
+  err = ex.extract(outputName2.data(), out[1]); // 11x11
+  if (err != 0) {
+    fmt::println("extract error:{}", err);
+    return 1;
+  }
 
   std::vector<TargetBox> tmpBoxes;
   //特征图后处理
@@ -238,5 +245,5 @@ ncnn::Mat yoloFastestv2::detection(const cv::Mat srcImg,
   // NMS
   nmsHandle(tmpBoxes, dstBoxes);
 
-  return inputImg;
+  return 0;
 }
