@@ -125,6 +125,18 @@ int yoloFastestv2::getCategory(const float *values, int index, int &category,
   return 0;
 }
 
+double mean(const float *begin, const float *end) {
+  float sum = std::accumulate(begin, end, static_cast<double>(0.0f));
+  return sum / (end - begin);
+}
+
+double varience(const float *begin, const float *end) {
+  double m = mean(begin, end);
+  double accum = 0.0f;
+  std::for_each(begin, end, [&](const float d) { accum += (d - m) * (d - m); });
+  return accum / (end - begin);
+}
+
 //特征图后处理
 int yoloFastestv2::predHandle(const ncnn::Mat *out,
                               std::vector<TargetBox> &dstBoxes,
@@ -147,9 +159,10 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
       auto output = out[i];
       auto begin = static_cast<float *>(output.channel(h).data);
       auto end = begin + output.channel(h).total();
-      auto values = std::vector(begin, end);
+      auto values = begin;
       if (h == 0) {
-        fmt::println("total:{}", output.channel(h).total());
+        fmt::println("total:{}\nmean:{}\nvariance:{}", output.channel(h).total(),
+                     mean(begin, end), varience(begin, end));
       }
       for (int w = 0; w < outW; w++) {
         for (int b = 0; b < numAnchor; b++) {
@@ -158,7 +171,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
           int category = -1;
           float score = -1;
 
-          getCategory(values.data(), b, category, score);
+          getCategory(values, b, category, score);
 
           if (score > thresh) {
             float bcx, bcy, bw, bh;
@@ -180,8 +193,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
             dstBoxes.push_back(tmpBox);
           }
         }
-        auto new_begin = begin + outC;
-        values.assign(new_begin, end);
+        values = values + outC;
       }
     }
   }
@@ -190,8 +202,8 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
 
 /// return the input mat for debugging
 int yoloFastestv2::detection(const cv::Mat srcImg,
-                                   std::vector<TargetBox> &dstBoxes,
-                                   const float thresh) {
+                             std::vector<TargetBox> &dstBoxes,
+                             const float thresh) {
   dstBoxes.clear();
 
   float scaleW = (float)srcImg.cols / (float)inputWidth;
