@@ -88,7 +88,7 @@ impl ImageModel for YoloFastest {
             let stride = input_height / out_h;
             use statrs::statistics::Statistics;
             for h in 0..out_h {
-                let mut values:&[f32] = output.channel_data(h);
+                let mut values: &[f32] = output.channel_data(h);
                 if h == 0 {
                     let values = values.iter().map(|x| *x as f64).collect::<Vec<_>>();
                     dbg!(values.len(), &values.clone().mean(), &values.variance());
@@ -99,14 +99,14 @@ impl ImageModel for YoloFastest {
                         if score > thresh {
                             let bcx = (values[b * 4 + 0] * 2.0 - 0.5 + w as f32) * stride as f32;
                             let bcy = (values[b * 4 + 1] * 2.0 - 0.5 + h as f32) * stride as f32;
-                            let bw = values[b * 4 + 2].powi(2)
+                            let bw = (values[b * 4 + 2] * 2.).powi(2)
                                 * ANCHOR[(i * NUM_ANCHOR * 2) + b as usize * 2 + 0];
-                            let bh = values[b * 4 + 3].powi(2)
+                            let bh = (values[b * 4 + 3] * 2.).powi(2)
                                 * ANCHOR[(i * NUM_ANCHOR * 2) + b as usize * 2 + 1];
-                            let x1 = ((bcx - bw / 2.0) * scale_w) as i32;
-                            let x2 = ((bcx + bw / 2.0) * scale_w) as i32;
-                            let y1 = ((bcy - bh / 2.0) * scale_h) as i32;
-                            let y2 = ((bcy + bh / 2.0) * scale_h) as i32;
+                            let x1 = ((bcx - bw * 0.5) * scale_w) as i32;
+                            let x2 = ((bcx + bw * 0.5) * scale_w) as i32;
+                            let y1 = ((bcy - bh * 0.5) * scale_h) as i32;
+                            let y2 = ((bcy + bh * 0.5) * scale_h) as i32;
                             let target = TargetBox {
                                 x1,
                                 y1,

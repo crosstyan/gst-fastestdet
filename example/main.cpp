@@ -99,10 +99,6 @@ int main() {
   }
 
   for (int i = 0; i < boxes.size(); i++) {
-    std::cout << boxes[i].x1 << " " << boxes[i].y1 << " " << boxes[i].x2 << " "
-              << boxes[i].y2 << " " << boxes[i].score << " " << boxes[i].cate
-              << std::endl;
-
     char text[256];
     sprintf(text, "%s %.1f%%", class_names[boxes[i].cate],
             boxes[i].score * 100);

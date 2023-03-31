@@ -26,7 +26,7 @@ struct Args {
     #[arg(long)]
     classes_path: String,
     /// nms
-    #[arg(short, long, default_value_t = 0.45)]
+    #[arg(short, long, default_value_t = 0.25)]
     nms_threshold: f32,
     /// output
     #[arg(short, long)]
@@ -107,21 +107,12 @@ pub fn main() -> Result<(), anyhow::Error>{
     classes
   )?;
   let rgb_img = img.as_mut_rgb8().ok_or(anyhow::anyhow!("not rgb8"))?;
-  // let resized = mat_to_rgbimg(&mat)?;
-  // let resized:RgbImage = img_resize(rgb_img, (352, 352))?.convert();
-  // resized.save(args.output)?;
-  let temp_mat = std::fs::read("chn0.bin")?;
-  let pb_mat = matrix::matrix::Mat::parse_from_bytes(&temp_mat)?;
-  let mat = pb_mat_to_ncnn(&pb_mat)?;
-  let targets = det.detect(&mat, (w, h), 0.8)?;
-  let m_nms_targets = nms_handle(&targets, args.nms_threshold);
-  println!("matrix nms_targets: {}", m_nms_targets.len());
-
   let img_mat = det.preprocess(rgb_img)?;
-  let targets = det.detect(&img_mat, (w, h), 0.8)?;
+  let targets = det.detect(&img_mat, (w, h), 0.3)?;
   let nms_targets = nms_handle(&targets, args.nms_threshold);
   println!("nms_targets: {}", nms_targets.len());
-  paint_targets(rgb_img, &m_nms_targets, det.labels())?;
+  dbg!(&nms_targets);
+  paint_targets(rgb_img, &nms_targets, det.labels())?;
   rgb_img.save(args.output)?;
   Ok(())
 }

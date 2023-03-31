@@ -161,8 +161,9 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
       auto end = begin + output.channel(h).total();
       auto values = begin;
       if (h == 0) {
-        fmt::println("total:{}\nmean:{}\nvariance:{}", output.channel(h).total(),
-                     mean(begin, end), varience(begin, end));
+        fmt::println("total:{}\nmean:{}\nvariance:{}",
+                     output.channel(h).total(), mean(begin, end),
+                     varience(begin, end));
       }
       for (int w = 0; w < outW; w++) {
         for (int b = 0; b < numAnchor; b++) {
@@ -182,7 +183,7 @@ int yoloFastestv2::predHandle(const ncnn::Mat *out,
                  anchor[(i * numAnchor * 2) + b * 2 + 0];
             bh = pow((values[b * 4 + 3] * 2.), 2) *
                  anchor[(i * numAnchor * 2) + b * 2 + 1];
-
+            fmt::println("bcx:{}, bcy:{}, bw:{}, bh:{}, score:{}", bcx, bcy, bw, bh, score);
             tmpBox.x1 = (bcx - 0.5 * bw) * scaleW;
             tmpBox.x2 = (bcx + 0.5 * bw) * scaleW;
             tmpBox.y1 = (bcy - 0.5 * bh) * scaleH;
@@ -257,6 +258,10 @@ int yoloFastestv2::detection(const cv::Mat srcImg,
 
   // NMS
   nmsHandle(tmpBoxes, dstBoxes);
+  for (auto box : dstBoxes) {
+    fmt::println("\n\tx1:{},\n\ty1:{},\n\tx2:{},\n\ty2:{}, \n\tscore:{}, \n\tcate:{}\n",
+                 box.x1, box.y1, box.x2, box.y2, box.score, box.cate);
+  }
 
   return 0;
 }
