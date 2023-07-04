@@ -90,37 +90,11 @@ impl GstFastestDet {
         let det = FastestDet::new(&settings.param_path, &settings.model_path, model_size, c)?;
         Ok(det)
     }
-    /// side effect/not pure
-    /// the function will paint the targets on the image
-    /// and push the targets to the text src
-    pub fn detect_push<
-        T: Deref<Target = [u8]> + DerefMut<Target = [u8]> + AsRef<[u8]>,
-        M: ImageModel,
-    >(
-        &self,
-        det: &mut M,
-        mat: &mut RgbBuffer<T>,
-        is_paint: bool,
-    ) -> Result<(), anyhow::Error> {
+
+    pub fn send_to_text_pad(&self, targets: &Vec<TargetBox>) -> Result<(), anyhow::Error> {
         let text_src = self.text_pad.as_ref();
-        let distribution = Uniform::from(0..100);
-        let mut s = self.settings.lock().unwrap();
-        assert!(s.dropout >= 0.0 && s.dropout < 1.0);
-        let p = distribution.sample(&mut s.rng) as f32 / 100.0;
-        let is_update = if p <= s.dropout { false } else { true };
-        let targets = if is_update {
-            let input = det.preprocess(&mat)?;
-            let (w, h) = (mat.width() as i32, mat.height() as i32);
-            det.detect(&input, (w, h), 0.65)?
-        } else {
-            s.last_state.clone()
-        };
-        let nms_targets = nms_handle(&targets, 0.45);
-        if is_update {
-            s.last_state = targets
-        }
         if let Some(pad) = text_src {
-            let serialized = serde_json::to_string(&nms_targets)?;
+            let serialized = serde_json::to_string(targets)?;
             let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
             // ignore the error
             // if there is no downstream element, the error will be FlowError
@@ -128,14 +102,72 @@ impl GstFastestDet {
             // No error should be raised.
             let _ = pad.push(buffer);
         }
-        if is_paint {
-            if nms_targets.is_empty().not() {
-                debug!(CAT, "painting targets:{:?}", nms_targets);
+        Ok(())
+    }
+
+    /// kinda pure
+    ///
+    /// would return targets filtered by nms
+    pub fn detect<
+        T: Deref<Target = [u8]> + DerefMut<Target = [u8]> + AsRef<[u8]>,
+        M: ImageModel,
+    >(
+        &self,
+        det: &mut M,
+        mat: &mut RgbBuffer<T>,
+    ) -> Result<Vec<TargetBox>, anyhow::Error> {
+        let input = det.preprocess(&mat)?;
+        let (w, h) = (mat.width() as i32, mat.height() as i32);
+        let targets = det.detect(&input, (w, h), 0.65)?;
+        let nms_targets = nms_handle(&targets, 0.45);
+        Ok(nms_targets)
+    }
+
+    fn transform_impl(&self, cols:u32, rows:u32, data:&mut [u8]) -> Result<gst::FlowSuccess, gst::FlowError>{
+        let mut settings = self.settings.lock().unwrap();
+        let is_paint = settings.is_paint;
+        let distribution = Uniform::from(0..100);
+        assert!(settings.dropout >= 0.0 && settings.dropout < 1.0);
+        let p = distribution.sample(&mut settings.rng) as f32 / 100.0;
+        let is_update = if p <= settings.dropout { false } else { true };
+        let last_state = settings.last_state.clone();
+
+        if is_update {
+            let det = settings.det.as_mut();
+            match det {
+                Some(det) => {
+                    // Don't use `to_vec` since it will create new buffer by copy
+                    let mut out_mat = image::ImageBuffer::from_raw(cols, rows, data);
+                    match out_mat {
+                        Some(ref mut out_mat) => {
+                            if is_update {
+                                match self.detect(det, out_mat) {
+                                    Ok(targets) => {
+                                        if is_paint {
+                                            if targets.is_empty().not() {
+                                                debug!(CAT, "painting targets:{:?}", targets);
+                                            }
+                                            let _ = paint_targets(out_mat, &targets, &det.labels());
+                                        }
+                                        return Ok(gst::FlowSuccess::Ok);
+                                    }
+                                    Err(_) => return Err(gst::FlowError::Error),
+                                };
+                            } else {
+                                if is_paint {
+                                    let _ = paint_targets(out_mat, &last_state, &det.labels());
+                                }
+                            }
+                        }
+                        None => {
+                            return Err(gst::FlowError::Error);
+                        }
+                    };
+                }
+                None => {}
             }
-            paint_targets(mat, &nms_targets, &det.labels())
-        } else {
-            Ok(())
         }
+        Ok(gst::FlowSuccess::Ok)
     }
 }
 
@@ -433,45 +465,11 @@ impl VideoFilterImpl for GstFastestDet {
         let cols = in_frame.width();
         let rows = in_frame.height();
         let in_data = in_frame.plane_data(0).unwrap();
-        let in_format = in_frame.format();
-        let out_format = out_frame.format();
         let out_data = out_frame.plane_data_mut(0).unwrap();
         out_data.copy_from_slice(in_data);
-
-        // Out_frame is empty. have to copy the content manually
-        // let size = rows * in_stride as i32;
-        // unsafe {
-        //     std::ptr::copy_nonoverlapping(in_ptr, out_ptr, size as usize);
-        // }
-
-        assert_eq!(in_format, gst_video::VideoFormat::Rgb);
-        assert_eq!(out_format, gst_video::VideoFormat::Rgb);
-
-        let mut settings = self.settings.lock().unwrap();
-        let is_paint = settings.is_paint;
-        let det = settings.det.as_mut();
-
-        match det {
-            Some(det) => {
-                // Don't use `to_vec` since it will create new buffer by copy
-                let mut out_mat = image::ImageBuffer::from_raw(cols, rows, out_data);
-                match out_mat {
-                    Some(ref mut out_mat) => {
-                        match self.detect_push(det, out_mat, is_paint) {
-                            Ok(_) => return Ok(gst::FlowSuccess::Ok),
-                            Err(_) => return Err(gst::FlowError::Error),
-                        };
-                    }
-                    None => {
-                        return Err(gst::FlowError::Error);
-                    }
-                };
-            }
-            None => {
-                return Ok(gst::FlowSuccess::Ok);
-            }
-        }
+        self.transform_impl(cols, rows, out_data)
     }
+
 
     fn transform_frame_ip(
         &self,
@@ -481,29 +479,6 @@ impl VideoFilterImpl for GstFastestDet {
         let rows = frame.height();
         // modify the buffer in place
         let data = frame.plane_data_mut(0).unwrap();
-
-        let mut settings = self.settings.lock().unwrap();
-        let is_paint = settings.is_paint;
-        let det = settings.det.as_mut();
-
-        match det {
-            Some(det) => {
-                let mut out_mat = image::ImageBuffer::from_raw(cols, rows, data);
-                match out_mat {
-                    Some(ref mut out_mat) => {
-                        match self.detect_push(det, out_mat, is_paint) {
-                            Ok(_) => return Ok(gst::FlowSuccess::Ok),
-                            Err(_) => return Err(gst::FlowError::Error),
-                        };
-                    }
-                    None => {
-                        return Err(gst::FlowError::Error);
-                    }
-                };
-            }
-            None => {
-                return Ok(gst::FlowSuccess::Ok);
-            }
-        }
+        self.transform_impl(cols, rows, data)
     }
 }
