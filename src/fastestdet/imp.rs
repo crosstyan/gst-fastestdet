@@ -1,6 +1,7 @@
 use gst::glib;
+use rand::rngs::StdRng;
 // use gst::glib::subclass::prelude::*;
-use super::common::{nms_handle, paint_targets, ImageModel, RgbBuffer};
+use super::common::{nms_handle, paint_targets, ImageModel, RgbBuffer, TargetBox};
 use super::fastest_det::FastestDet;
 use gst::prelude::*;
 use gst::subclass::prelude::*;
@@ -8,7 +9,9 @@ use gst::{debug, info, warning};
 use gst_base::subclass::prelude::*;
 use gst_video::subclass::prelude::*;
 use once_cell::sync::Lazy;
-use serde_derive::{Deserialize};
+use rand::distributions::{Distribution, Uniform};
+use rand::{Rng, SeedableRng};
+use serde_derive::Deserialize;
 use std::i32;
 use std::ops::Not;
 use std::ops::{Deref, DerefMut};
@@ -45,6 +48,9 @@ pub struct Settings {
     param_path: String,
     classes_path: String,
     is_paint: bool,
+    rng: StdRng,
+    last_state: Vec<TargetBox>,
+    dropout: f32,
     det: Option<FastestDet>,
 }
 
@@ -55,6 +61,9 @@ impl Default for Settings {
             param_path: DEFAULT_PARAM_PATH.to_string(),
             classes_path: DEFAULT_CLASSES_PATH.to_string(),
             is_paint: false,
+            rng: StdRng::from_entropy(),
+            last_state: vec![],
+            dropout: 0.0,
             det: None,
         }
     }
@@ -94,10 +103,22 @@ impl GstFastestDet {
         is_paint: bool,
     ) -> Result<(), anyhow::Error> {
         let text_src = self.text_pad.as_ref();
-        let input = det.preprocess(&mat)?;
-        let (w, h) = (mat.width() as i32, mat.height() as i32);
-        let targets = det.detect(&input, (w, h), 0.65)?;
+        let distribution = Uniform::from(0..100);
+        let mut s = self.settings.lock().unwrap();
+        assert!(s.dropout >= 0.0 && s.dropout < 1.0);
+        let p = distribution.sample(&mut s.rng) as f32 / 100.0;
+        let is_update = if p <= s.dropout { false } else { true };
+        let targets = if is_update {
+            let input = det.preprocess(&mat)?;
+            let (w, h) = (mat.width() as i32, mat.height() as i32);
+            det.detect(&input, (w, h), 0.65)?
+        } else {
+            s.last_state.clone()
+        };
         let nms_targets = nms_handle(&targets, 0.45);
+        if is_update {
+            s.last_state = targets
+        }
         if let Some(pad) = text_src {
             let serialized = serde_json::to_string(&nms_targets)?;
             let buffer = gst::Buffer::from_mut_slice(serialized.into_bytes());
@@ -181,6 +202,11 @@ impl ObjectImpl for GstFastestDet {
                     .default_value(true)
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
+                glib::ParamSpecFloat::builder("dropout")
+                    .nick("Dropout rate")
+                    .blurb("dropout rate")
+                    .flags(glib::ParamFlags::READWRITE)
+                    .build(),
                 // TODO: use signal to reload model
                 glib::ParamSpecBoolean::builder("run")
                     .nick("Run")
@@ -215,6 +241,11 @@ impl ObjectImpl for GstFastestDet {
                 settings.param_path = value.get().unwrap();
                 settings.param_path = settings.param_path.trim().to_string();
                 info!(CAT, "Set param path to {}", settings.param_path);
+            }
+            "dropout" => {
+                let mut settings = self.settings.lock().unwrap();
+                settings.dropout = value.get().unwrap();
+                info!(CAT, "Set dropout to {}", settings.dropout);
             }
             "is-paint" => {
                 let mut settings = self.settings.lock().unwrap();
@@ -258,6 +289,10 @@ impl ObjectImpl for GstFastestDet {
             "param-path" => {
                 let settings = self.settings.lock().unwrap();
                 settings.param_path.to_value()
+            }
+            "dropout" => {
+                let settings = self.settings.lock().unwrap();
+                settings.dropout.to_value()
             }
             "is-paint" => {
                 let settings = self.settings.lock().unwrap();
