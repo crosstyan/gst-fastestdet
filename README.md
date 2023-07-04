@@ -13,3 +13,7 @@ Find compiled `libncnn.so`. Use release build.
 ```bash
 find . | grep libncnn.so
 ```
+
+```bash
+cp artifact/libomp.so /usr/local/lib
+```
