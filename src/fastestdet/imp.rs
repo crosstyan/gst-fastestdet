@@ -234,13 +234,13 @@ impl ObjectImpl for GstFastestDet {
                     .build(),
                 glib::ParamSpecBoolean::builder("is-paint")
                     .nick("Is paint")
-                    .blurb("if true, the recognition result will be painted on the image")
+                    .blurb("If true, the recognition result will be painted on the image")
                     .default_value(true)
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
                 glib::ParamSpecFloat::builder("dropout")
                     .nick("Dropout rate")
-                    .blurb("dropout rate")
+                    .blurb("Dropout rate. If the value is 0.0, the recognition result will be updated every frame. The higher the value, the lower the update frequency")
                     .flags(glib::ParamFlags::READWRITE)
                     .build(),
                 // TODO: use signal to reload model
