@@ -153,6 +153,13 @@ impl GstFastestDet {
                                         }
                                         let _ = paint_targets(out_mat, &targets, &det.labels());
                                     }
+                                    // send to text pad only the targets are changed
+                                    match self.send_to_text_pad(&targets) {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            gst::error!(CAT, "send to text pad error:{}", e);
+                                        }
+                                    };
                                     settings.last_state = targets;
                                     return Ok(gst::FlowSuccess::Ok);
                                 }
