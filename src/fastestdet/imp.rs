@@ -123,7 +123,12 @@ impl GstFastestDet {
         Ok(nms_targets)
     }
 
-    fn transform_impl(&self, cols:u32, rows:u32, data:&mut [u8]) -> Result<gst::FlowSuccess, gst::FlowError>{
+    fn transform_impl(
+        &self,
+        cols: u32,
+        rows: u32,
+        data: &mut [u8],
+    ) -> Result<gst::FlowSuccess, gst::FlowError> {
         let mut settings = self.settings.lock().unwrap();
         let is_paint = settings.is_paint;
         let distribution = Uniform::from(0..100);
@@ -132,40 +137,39 @@ impl GstFastestDet {
         let is_update = if p <= settings.dropout { false } else { true };
         let last_state = settings.last_state.clone();
 
-        if is_update {
-            let det = settings.det.as_mut();
-            match det {
-                Some(det) => {
-                    // Don't use `to_vec` since it will create new buffer by copy
-                    let mut out_mat = image::ImageBuffer::from_raw(cols, rows, data);
-                    match out_mat {
-                        Some(ref mut out_mat) => {
-                            if is_update {
-                                match self.detect(det, out_mat) {
-                                    Ok(targets) => {
-                                        if is_paint {
-                                            if targets.is_empty().not() {
-                                                debug!(CAT, "painting targets:{:?}", targets);
-                                            }
-                                            let _ = paint_targets(out_mat, &targets, &det.labels());
+        let det = settings.det.as_mut();
+        match det {
+            Some(det) => {
+                // Don't use `to_vec` since it will create new buffer by copy
+                let mut out_mat = image::ImageBuffer::from_raw(cols, rows, data);
+                match out_mat {
+                    Some(ref mut out_mat) => {
+                        if is_update {
+                            match self.detect(det, out_mat) {
+                                Ok(targets) => {
+                                    if is_paint {
+                                        if targets.is_empty().not() {
+                                            debug!(CAT, "painting targets:{:?}", targets);
                                         }
-                                        return Ok(gst::FlowSuccess::Ok);
+                                        let _ = paint_targets(out_mat, &targets, &det.labels());
                                     }
-                                    Err(_) => return Err(gst::FlowError::Error),
-                                };
-                            } else {
-                                if is_paint {
-                                    let _ = paint_targets(out_mat, &last_state, &det.labels());
+                                    settings.last_state = targets;
+                                    return Ok(gst::FlowSuccess::Ok);
                                 }
+                                Err(_) => return Err(gst::FlowError::Error),
+                            };
+                        } else {
+                            if is_paint {
+                                let _ = paint_targets(out_mat, &last_state, &det.labels());
                             }
                         }
-                        None => {
-                            return Err(gst::FlowError::Error);
-                        }
-                    };
-                }
-                None => {}
+                    }
+                    None => {
+                        return Err(gst::FlowError::Error);
+                    }
+                };
             }
+            None => {}
         }
         Ok(gst::FlowSuccess::Ok)
     }
@@ -469,7 +473,6 @@ impl VideoFilterImpl for GstFastestDet {
         out_data.copy_from_slice(in_data);
         self.transform_impl(cols, rows, out_data)
     }
-
 
     fn transform_frame_ip(
         &self,
